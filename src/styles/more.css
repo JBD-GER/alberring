@@ -1,0 +1,81 @@
+.more-sections {
+  display: grid;
+  gap: 28px;
+}
+
+.more-section {
+  display: grid;
+  gap: 13px;
+}
+
+.more-section > header h3 {
+  margin: 0 0 3px;
+  color: #263537;
+  font-size: 1rem;
+}
+
+.more-section > header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.more-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+.more-grid a {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 15px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.more-grid a:hover {
+  border-color: #b7dada;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(26, 62, 62, 0.06);
+  transform: translateY(-1px);
+}
+.more-grid a > span {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+.more-grid a div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.more-grid a small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+@media (max-width: 620px) {
+  .more-sections {
+    gap: 25px;
+  }
+
+  .more-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .more-grid a {
+    min-height: 74px;
+  }
+}

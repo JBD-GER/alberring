@@ -1,0 +1,29 @@
+.message-actions {
+  display: flex;
+  gap: 8px;
+  opacity: 0;
+  margin-top: 5px;
+  flex-wrap: wrap;
+}
+.bubble:hover .message-actions,
+.message-actions:focus-within {
+  opacity: 1;
+}
+.message-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.message-actions svg {
+  width: 12px;
+}
+@media (hover: none) {
+  .message-actions {
+    opacity: 1;
+  }
+}

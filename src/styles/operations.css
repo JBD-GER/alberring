@@ -1,0 +1,67 @@
+.audit-list {
+  display: grid;
+  gap: 7px;
+}
+.audit-list article {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+}
+.audit-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f0f3f3;
+  color: var(--primary-dark);
+  display: grid;
+  place-items: center;
+}
+.audit-list p,
+.audit-list small {
+  display: block;
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.integration-grid {
+  display: grid;
+  gap: 12px;
+}
+.integration-grid article {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 15px;
+  align-items: center;
+}
+.integration-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  display: grid;
+  place-items: center;
+}
+.integration-grid h3 {
+  margin: 0 0 5px;
+}
+.integration-grid p {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+@media (max-width: 650px) {
+  .integration-grid article {
+    grid-template-columns: 48px 1fr;
+  }
+  .integration-grid button {
+    grid-column: 1/3;
+  }
+}

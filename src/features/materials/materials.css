@@ -1,0 +1,114 @@
+.material-card {
+  gap: 15px;
+}
+.material-card h3 {
+  margin-top: 4px;
+}
+.material-category {
+  color: var(--primary-dark);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.material-statuses {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.material-reason {
+  margin: 0 !important;
+  padding: 11px 13px;
+  background: #f6f8f8;
+  border-radius: 9px;
+  color: #48595b !important;
+  font-size: 0.86rem;
+}
+.material-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0 0;
+  display: flex;
+  overflow-x: auto;
+}
+.material-timeline li {
+  position: relative;
+  display: flex;
+  gap: 7px;
+  min-width: 160px;
+  flex: 1;
+  color: var(--muted);
+}
+.material-timeline li:not(:last-child):after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 7px;
+  top: 10px;
+  height: 2px;
+  background: #d9e3e3;
+}
+.material-timeline li > span {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid #bccaca;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+.material-timeline li.done > span {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: #fff;
+}
+.material-timeline li.current > span {
+  border-color: var(--primary-dark);
+  color: var(--primary-dark);
+}
+.material-timeline li > div {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding-right: 8px;
+  min-width: 0;
+}
+.material-timeline strong {
+  font-size: 0.76rem;
+  color: #354547;
+}
+.material-timeline small {
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+.material-timeline p {
+  font-size: 0.72rem !important;
+  margin: 2px 0 0 !important;
+  line-height: 1.35;
+}
+@media (max-width: 620px) {
+  .material-statuses {
+    justify-content: flex-start;
+  }
+  .material-timeline {
+    display: grid;
+    gap: 8px;
+    overflow: visible;
+  }
+  .material-timeline li {
+    min-width: 0;
+  }
+  .material-timeline li:not(:last-child):after {
+    left: 10px;
+    right: auto;
+    top: 22px;
+    bottom: -9px;
+    width: 2px;
+    height: auto;
+  }
+}

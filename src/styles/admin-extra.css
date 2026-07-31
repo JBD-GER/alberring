@@ -1,0 +1,96 @@
+.permission-editor {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  max-height: 380px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+.permission-editor label {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 7px;
+  border-radius: 8px;
+}
+.permission-editor label:hover {
+  background: #f5f8f8;
+}
+.permission-editor input {
+  width: 17px;
+  height: 17px;
+}
+.permission-editor span {
+  display: grid;
+  gap: 2px;
+}
+.permission-editor strong {
+  font-size: 12px;
+}
+.permission-editor small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.detail-grid > div {
+  background: var(--surface);
+  padding: 14px;
+}
+.detail-grid dt {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.detail-grid dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.assignment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.assignment-grid fieldset {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px;
+  display: grid;
+  gap: 8px;
+}
+.assignment-grid legend {
+  padding: 0 6px;
+  font-weight: 800;
+}
+.assignment-grid label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 4px 7px;
+  border-radius: 8px;
+}
+.assignment-grid label:hover {
+  background: var(--primary-soft);
+}
+.assignment-grid input {
+  width: 18px;
+  height: 18px;
+}
+@media (max-width: 640px) {
+  .assignment-grid {
+    grid-template-columns: 1fr;
+  }
+}

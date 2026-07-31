@@ -1,0 +1,63 @@
+.settings-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+  box-shadow: 0 4px 14px rgba(31, 65, 65, 0.04);
+}
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
+}
+.profile-hero h3 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+.profile-hero p,
+.settings-title p {
+  margin: 0;
+  color: var(--muted);
+}
+.settings-title {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+}
+.settings-title > svg {
+  color: var(--primary-dark);
+}
+.settings-title h3 {
+  margin: 0 0 3px;
+}
+.preference-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px;
+  background: #f8fafa;
+  border-radius: 12px;
+}
+.preference-row span:first-child {
+  display: grid;
+  gap: 3px;
+}
+.preference-row small {
+  color: var(--muted);
+}
+.danger-zone {
+  border-color: #e7d9d9;
+}
+.danger-zone .secondary {
+  width: max-content;
+}

@@ -1,0 +1,11 @@
+.user-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.user-controls select {
+  flex: 1;
+}
+.user-controls .icon-button svg {
+  width: 17px;
+}

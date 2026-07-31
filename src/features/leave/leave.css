@@ -1,0 +1,132 @@
+.leave-note {
+  margin: 0;
+  padding: 11px 13px;
+  border-left: 3px solid #b9dede;
+  background: #f7fafa;
+  border-radius: 0 9px 9px 0;
+  color: #465659 !important;
+  font-size: 0.88rem;
+}
+.leave-workday-preview {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--primary-soft);
+  color: #075e61;
+}
+.leave-workday-preview > svg {
+  flex: none;
+}
+.leave-workday-preview div {
+  display: grid;
+  gap: 2px;
+}
+.leave-workday-preview span {
+  font-size: 0.78rem;
+  color: #3d6769;
+}
+.leave-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0;
+  display: flex;
+  gap: 0;
+}
+.leave-timeline li {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  color: var(--muted);
+}
+.leave-timeline li:not(:last-child):after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  left: 28px;
+  right: 8px;
+  top: 11px;
+  background: #dce4e4;
+}
+.leave-timeline li > span {
+  position: relative;
+  z-index: 1;
+  width: 23px;
+  height: 23px;
+  flex: none;
+  border: 2px solid #cbd5d5;
+  background: #fff;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+.leave-timeline li.done > span {
+  border-color: var(--primary-dark);
+  background: var(--primary-dark);
+  color: #fff;
+}
+.leave-timeline li.current > span {
+  border-color: var(--primary-dark);
+  color: var(--primary-dark);
+}
+.leave-timeline li > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding-right: 8px;
+}
+.leave-timeline strong {
+  font-size: 0.78rem;
+  color: #344346;
+}
+.leave-timeline small {
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.leave-decision-note {
+  padding: 12px;
+  border-radius: 10px;
+  background: #f5f7f7;
+}
+.leave-decision-note strong {
+  font-size: 0.78rem;
+}
+.leave-decision-note p {
+  margin: 3px 0 0 !important;
+  font-size: 0.86rem;
+}
+.leave-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+@media (max-width: 620px) {
+  .leave-timeline {
+    display: grid;
+    gap: 8px;
+  }
+  .leave-timeline li:not(:last-child):after {
+    width: 2px;
+    height: auto;
+    left: 10px;
+    right: auto;
+    top: 24px;
+    bottom: -9px;
+  }
+  .leave-decision-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .leave-decision-actions button {
+    width: 100%;
+  }
+}

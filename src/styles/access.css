@@ -1,0 +1,11 @@
+.blocked-access {
+  gap: 12px;
+}
+.blocked-access p {
+  color: var(--muted);
+}
+.blocked-access .primary,
+.blocked-access .secondary {
+  width: min(360px, 100%);
+  margin: 0 auto;
+}

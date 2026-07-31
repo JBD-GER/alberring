@@ -1,0 +1,236 @@
+/* Native-ready interaction layer -------------------------------------------
+   Shared ergonomics for the responsive PWA and a later Capacitor shell. */
+:root {
+  color-scheme: light;
+  --tap-target: 44px;
+  --page-gutter: clamp(16px, 4vw, 48px);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --focus-ring: 0 0 0 3px rgba(0, 127, 132, 0.2);
+  --elevation-card: 0 10px 32px rgba(31, 59, 61, 0.065);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  min-height: 100%;
+  background: var(--shell-bg, #f7f9f9);
+  scroll-behavior: smooth;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100%;
+  overflow-wrap: break-word;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  max-width: 100%;
+  font: inherit;
+}
+
+button,
+[role="button"],
+select,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  min-height: var(--tap-target);
+  border-color: #cbd8d9;
+  color: var(--shell-ink, #263337);
+  background-color: #fff;
+}
+
+textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #7b898c;
+  opacity: 1;
+}
+
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--shell-accent-dark, #007f84);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+::selection {
+  color: #fff;
+  background: var(--shell-accent-dark, #007f84);
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+dialog,
+[role="dialog"] {
+  max-width: min(94vw, 760px);
+  max-height: min(90dvh, 900px);
+}
+
+@media (max-width: 960px) {
+  html {
+    scroll-padding-top: calc(76px + env(safe-area-inset-top));
+  }
+
+  body {
+    padding-right: env(safe-area-inset-right);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .content {
+    contain: inline-size;
+  }
+
+  /* Wide data views remain usable without forcing the entire page to scroll. */
+  :where(.table-wrap, .admin-table-wrap, .schedule-table-wrap) {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  :where(.primary, .secondary, .wf-primary, .wf-secondary, .text-button) {
+    min-height: var(--tap-target);
+  }
+}
+
+@media (max-width: 620px) {
+  /* Prevent iOS Safari from zooming into form controls. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .page-stack {
+    gap: 18px;
+  }
+
+  :where(.card, .dashboard-card, .panel, .wf-card) {
+    box-shadow: 0 6px 22px rgba(31, 59, 61, 0.055);
+  }
+
+  :where(.form-actions, .modal-actions, .dialog-actions) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  :where(.form-actions, .modal-actions, .dialog-actions)
+    :where(button, a[role="button"]) {
+    width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .content {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .topbar {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .bottom-nav-label {
+    font-size: 0.6rem;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  :where(button, a, summary, [role="button"]) {
+    touch-action: manipulation;
+  }
+
+  :where(.icon-button, .avatar, .bottom-nav a) {
+    min-width: var(--tap-target);
+    min-height: var(--tap-target);
+  }
+
+  /* Hover-only affordances must stay discoverable on touch devices. */
+  :where(.message-actions, .row-actions, .card-actions) {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --shell-line: #aebbbc;
+    --border: #aebbbc;
+  }
+
+  :where(.card, .dashboard-card, .panel, .wf-card) {
+    border-color: #899899;
+  }
+}
+
+@media print {
+  .sidebar,
+  .topbar,
+  .bottom-nav,
+  .pwa-update {
+    display: none !important;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .content {
+    max-width: none;
+    padding: 0;
+  }
+}

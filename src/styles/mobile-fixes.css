@@ -1,0 +1,44 @@
+@media (max-width: 900px) {
+  .bottom-nav {
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  }
+  .chat {
+    height: calc(100dvh - 138px);
+  }
+  .admin-user > div:nth-child(2) {
+    min-width: 0;
+  }
+  .admin-user p,
+  .admin-user small {
+    overflow-wrap: anywhere;
+  }
+  .admin-user .user-controls {
+    grid-column: 2/4;
+    width: 100%;
+    min-width: 0;
+  }
+  .admin-user .user-controls select {
+    width: 100%;
+    min-width: 0;
+  }
+  .fleet-header-actions .wf-secondary {
+    display: flex !important;
+    width: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+  .fleet-header-actions .wf-secondary svg {
+    margin: 0;
+  }
+}
+@media (max-width: 460px) {
+  .chat {
+    margin-left: -13px;
+    margin-right: -13px;
+  }
+}
+@media (hover: none), (pointer: coarse) {
+  .message-actions {
+    opacity: 1;
+  }
+}

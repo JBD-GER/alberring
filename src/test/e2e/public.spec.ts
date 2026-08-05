@@ -10,6 +10,13 @@ test("Login ist mobil ohne horizontales Scrollen bedienbar", async ({
   await expect(
     page.getByRole("button", { name: "Sicher anmelden" }),
   ).toBeVisible();
+  const benefits = page.locator(".auth-benefits");
+  await expect(benefits).toHaveAttribute("role", "list");
+  await expect(benefits).toHaveAttribute(
+    "aria-label",
+    "Vorteile der Mitarbeiter-App",
+  );
+  await expect(benefits.locator(":scope > [role=listitem]")).toHaveCount(3);
   const width = await page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
     client: document.documentElement.clientWidth,

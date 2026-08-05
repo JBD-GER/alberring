@@ -44,16 +44,17 @@ function AuthFrame({
         <div
           className="auth-benefits"
           aria-label="Vorteile der Mitarbeiter-App"
+          role="list"
         >
-          <span>
+          <span role="listitem">
             <CalendarCheck2 />
             Dienstplan jederzeit griffbereit
           </span>
-          <span>
+          <span role="listitem">
             <HeartHandshake />
             Für den Pflegealltag entwickelt
           </span>
-          <span>
+          <span role="listitem">
             <ShieldCheck />
             Geschützt und nur für Mitarbeitende
           </span>

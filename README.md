@@ -39,9 +39,13 @@ Das ist keine doppelte Konfiguration: `VITE_*` wird beim Frontend-Build verwende
 ```bash
 npm run typecheck
 npm run lint
+npm run format:check
 npm run test
+npm audit --audit-level=high
 npm run build
 npm run test:e2e
+npx --yes deno@2.9.4 check supabase/functions/*/index.ts
+npx --yes deno@2.9.4 test --allow-env=ALLOWED_ORIGINS,AUTOMATION_SECRET supabase/functions
 ```
 
 Die Datenbanktests benötigen zusätzlich die Supabase CLI und Docker:

@@ -12,7 +12,7 @@ Wenn `202607100001_core.sql` und `202607100002_messaging.sql` in diesem Projekt 
 supabase/SETUP_UPGRADE_20260710.sql
 ```
 
-Das transaktionale Bundle enthält die Migrationen 003 bis 006 und die aktuellen Referenzdaten. Keine Teilabschnitte herauskopieren und `SETUP_FRESH.sql` nicht zusätzlich ausführen.
+Das transaktionale Bundle enthält alle versionierten Migrationen ab `202607100003_domain_schema.sql` bis zum aktuellen Stand sowie die aktuellen Referenzdaten. Keine Teilabschnitte herauskopieren und `SETUP_FRESH.sql` nicht zusätzlich ausführen.
 
 ### Wirklich leeres Supabase-Projekt
 
@@ -24,7 +24,7 @@ supabase/SETUP_FRESH.sql
 
 Sie enthält Kernschema, Messaging, Fachdomänen, RLS, Workflows und Referenzdaten in einem transaktionalen Bundle. Vorhandene Supabase-Systemschemas wie `auth` und `storage` sind normal und bedeuten nicht, dass Alberring bereits installiert ist.
 
-Vor einem Upgrade produktiver Daten immer ein Backup erstellen. Die Setup-Dateien installieren keine Edge Functions, keine Function-Secrets, kein SMTP und keine Cron-Zeitpläne; diese Schritte sind in [DEPLOYMENT.md](DEPLOYMENT.md) beschrieben.
+Vor einem Upgrade produktiver Daten immer ein Backup erstellen. Die Setup-Dateien installieren keine Edge Functions, keine Function-Secrets und kein SMTP. Sie installieren die Cron-/`pg_net`-Definitionen; Zeitpläne werden nur dann automatisch aktiviert, wenn die beiden erforderlichen Vault-Secrets bereits vorhanden sind. Der vollständige Ablauf ist in [DEPLOYMENT.md](DEPLOYMENT.md) beschrieben.
 
 ## Erster Administrator
 
@@ -56,10 +56,10 @@ SQL kann die gehostete Supabase-Auth-Einstellung für öffentliche Registrierung
 
 - **Site URL** auf die produktive App-URL setzen.
 - Als Redirect-URLs mindestens `https://IHRE-APP/accept-invite` und `https://IHRE-APP/reset-password` erlauben.
-- Produktives SMTP konfigurieren und Einladung sowie Passwort-Reset real testen.
+- Für automatischen Versand produktives SMTP konfigurieren und Einladung sowie Passwort-Reset real testen. Ohne SMTP erzeugt die Administration stattdessen einen einmaligen Link zur sicheren manuellen Weitergabe.
 - Eine angemessene Mindestpasswortlänge und die gewünschte Session-/MFA-Strategie in Auth festlegen.
 
-`admin-create-user` kann einen unbestätigten, zur gleichen Organisation gehörenden Auth-Invite nach einem Timeout sicher wieder aufnehmen. Vorhandene aktive oder organisationsfremde Konten werden nicht übernommen. Erneutes Senden ist serverseitig mit einem kurzen Cooldown serialisiert und auditiert.
+`admin-create-user` kann einen unbestätigten, zur gleichen Organisation gehörenden Auth-Invite nach einem Timeout sicher wieder aufnehmen. Vorhandene aktive oder organisationsfremde Konten werden nicht übernommen. Erneutes Senden ist serverseitig mit einem kurzen Cooldown serialisiert und auditiert. Ist der Supabase-Mailversand nicht verfügbar oder gedrosselt, wird der Benutzer trotzdem angelegt und der berechtigten Administration ein kurzlebiger Einmal-Link angezeigt; dieser darf nur über einen sicheren Kanal an den vorgesehenen Empfänger weitergegeben werden.
 
 ## Versionierte Quellen
 
@@ -74,6 +74,16 @@ Die fachlich maßgeblichen Migrationsquellen bleiben:
 7. `202607120007_document_folders.sql` – sichere Dokumentordner
 8. `202607120008_document_folder_audiences.sql` – rollenbasierte Ordnerfreigaben
 9. `202607240009_messaging_policy_hardening.sql` – korrekte Chat-Zielbindung in RLS
+10. `20260730100141_harden_function_execute_privileges.sql` – eingeschränkte Ausführungsrechte für Definer-Funktionen
+11. `20260805070410_restrict_service_role_functions.sql` – rein interne Service-Role-Funktionen
+12. `20260805070802_fix_rls_policy_correlations.sql` – explizit korrelierte RLS-Unterabfragen
+13. `20260805070954_trust_invite_app_metadata.sql` – vertrauenswürdige Organisationsbindung für Einladungen
+14. `20260805071230_harden_role_mutations.sql` – Rollenänderungen ausschließlich über geprüfte RPCs
+15. `20260805071734_harden_document_upload_cleanup.sql` – atomarer Dokument-Upload-Cleanup
+16. `20260805071735_configure_automation_scheduler.sql` – Vault-gestützte Cron-Automatisierung
+17. `20260805072000_workflow_authorization_hardening.sql` – geschlossene Workflow-, Datei- und Mandantengrenzen
+18. `20260805075000_harden_storage_and_default_privileges.sql` – referenzsicherer Storage-Cleanup und minimale Data-API-Standardrechte
+19. `20260805075500_harden_workflow_rpc_invariants.sql` – Invite-, Rollen- und Workflow-Invarianten an der Datenbankgrenze
 
 `SETUP_FRESH.sql` und `SETUP_UPGRADE_20260710.sql` sind die bequemen Installationsbundles für den SQL Editor. Sie werden mit `npm run supabase:build:setup` vollständig aus den versionierten Migrationen und `seed.sql` erzeugt. Die Einzelmigrationen bleiben die maßgebliche Quelle.
 
@@ -155,11 +165,11 @@ Automations-Functions mit eigenem `AUTOMATION_SECRET`:
 - `process-scheduled-news`
 - `send-notification-batch`
 
-Einladungs- und Recovery-Mails laufen über Supabase Auth und benötigen für den Produktivbetrieb eine funktionierende SMTP-Konfiguration sowie korrekte Redirect-URLs. Der reine SQL-Lauf deployt keine dieser Functions. Befehle, Secrets und Cron-Hinweise stehen in [DEPLOYMENT.md](DEPLOYMENT.md#5-edge-functions-deployen).
+Einladungs- und Recovery-Mails laufen über Supabase Auth und benötigen für automatischen Versand eine funktionierende SMTP-Konfiguration sowie korrekte Redirect-URLs. Ohne Mailzustellung erzeugen die Admin-Functions einen manuellen Einmal-Link; der reine SQL-Lauf deployt keine dieser Functions. Befehle, Secrets und Cron-Hinweise stehen in [DEPLOYMENT.md](DEPLOYMENT.md#5-edge-functions-deployen).
 
 ## Tests und aktueller Nachweis
 
-[`supabase/tests/rls_core.test.sql`](../supabase/tests/rls_core.test.sql) enthält 22 positive und negative pgTAP-Prüfungen, unter anderem für Organisationstrennung, Chatmitgliedschaft plus `messages.use`, Team-Scope bei Krankmeldungen, Rollen-Eskalation, News-Publishing, eigene Notifications sowie Attest-, persönliche Dokument- und Storage-Zugriffe.
+Die vier Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 141 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten sowie 8 für den Automations-Scheduler. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
 
 Ausführung mit lokaler Supabase CLI und Docker:
 
@@ -168,6 +178,4 @@ npx supabase db reset
 npx supabase test db
 ```
 
-In der aktuellen Arbeitsumgebung wurden alle Migrationen 001–006 und `seed.sql` auf einer vollständig leeren eingebetteten PostgreSQL-Laufzeit ausgeführt. Dabei wurden 65 Public-Tabellen, die vollständige Berechtigungsmatrix aller neun Standardrollen sowie Kernworkflows für Bootstrap, Chat, News, Dokumente, Urlaub, Krankmeldung, Planung, Fuhrpark, Kilometerstände und Material geprüft. Zusätzlich bestanden PostgreSQL-Parser und Deno-Typecheck der Edge Functions.
-
-Der pgTAP-Lauf selbst wurde mangels Docker/Supabase CLI hier **nicht** ausgeführt. Vor einem produktiven Rollout müssen `db reset` und `test db` daher trotzdem auf einer echten lokalen Supabase-Instanz sowie anschließend rollenbasierte Smoke-/E2E-Tests gegen Staging erfolgreich sein.
+Am 05.08.2026 bestanden alle 141 Assertions direkt gegen das verknüpfte Supabase-Projekt innerhalb vollständig zurückgerollter Testtransaktionen; `db lint` meldete für `public` und `private` keine Schemafehler. CI startet zusätzlich eine frische lokale Supabase-Datenbank, wendet alle Migrationen an und führt Lint plus pgTAP erneut aus.

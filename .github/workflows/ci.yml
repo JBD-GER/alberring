@@ -3,12 +3,33 @@ on: [push, pull_request]
 jobs:
   web:
     runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-public-anon-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm }
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.9.4 }
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run test
-      - run: npm run build
+      - run: deno check supabase/functions/*/index.ts
+      - run: deno test --allow-env=ALLOWED_ORIGINS,AUTOMATION_SECRET --permit-no-files supabase/functions
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.111.0
+          github-token: ${{ github.token }}
+      - run: supabase db start
+      - run: supabase db lint --local --level warning --fail-on error --schema public,private
+      - run: supabase test db

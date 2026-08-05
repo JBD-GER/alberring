@@ -4,17 +4,17 @@ Effektive Rechte sind die Vereinigung aller aktiven, zeitlich gültigen Rollen e
 
 ## Standardrollen
 
-| Rolle | Schwerpunkt | Bewusst nicht automatisch enthalten |
-|---|---|---|
-| Super Admin | Vollständige Betreiberadministration | Vergabe nur an ausdrücklich autorisierte Personen |
-| Administration | Benutzer, Teams, News, allgemeine Dokumente, Einstellungen | Atteste und HR-Mitarbeiterakten |
-| Pflegedienstleitung | Planung, News, Urlaub, Abwesenheitsstatus | Attestdateien |
-| Teamleitung | Eigenes Team, Teamplanung, erste Urlaubsfreigabe | Attestdateien, globale Administration |
-| Disposition | Planung, Verfügbarkeit, Fuhrparkübersicht | Atteste, medizinische Details |
-| Personal / HR | Mitarbeiter, Urlaub, Krankmeldungen, Attestarchiv | Integrations-/Systemrechte ohne Zusatzrolle |
-| Fuhrpark | Fahrzeuge, Zuweisungen, Kilometerstände | HR- und Attestdaten |
-| Mitarbeiter | Eigene Daten und Anträge, Kommunikation, veröffentlichte Inhalte | Fremde Anträge und Administration |
-| Auditor / Datenschutz | Audit- und Rollenübersicht lesend | Chat-Inhalte und Atteste |
+| Rolle                 | Schwerpunkt                                                      | Bewusst nicht automatisch enthalten               |
+| --------------------- | ---------------------------------------------------------------- | ------------------------------------------------- |
+| Super Admin           | Vollständige Betreiberadministration                             | Vergabe nur an ausdrücklich autorisierte Personen |
+| Administration        | Benutzer, Teams, News, allgemeine Dokumente, Einstellungen       | Atteste und HR-Mitarbeiterakten                   |
+| Pflegedienstleitung   | Planung, News, Urlaub, Abwesenheitsstatus                        | Attestdateien                                     |
+| Teamleitung           | Eigenes Team, Teamplanung, erste Urlaubsfreigabe                 | Attestdateien, globale Administration             |
+| Disposition           | Planung, Verfügbarkeit, Fuhrparkübersicht                        | Atteste, medizinische Details                     |
+| Personal / HR         | Mitarbeiter, Urlaub, Krankmeldungen, Attestarchiv                | Integrations-/Systemrechte ohne Zusatzrolle       |
+| Fuhrpark              | Fahrzeuge, Zuweisungen, Kilometerstände                          | HR- und Attestdaten                               |
+| Mitarbeiter           | Eigene Daten und Anträge, Kommunikation, veröffentlichte Inhalte | Fremde Anträge und Administration                 |
+| Auditor / Datenschutz | Audit- und Rollenübersicht lesend                                | Chat-Inhalte und Atteste                          |
 
 Systemrollen sind organisationsspezifisch editierbar. Die Migration ergänzt fehlende Standardrollen und Rechte, entfernt aber keine bewusst angepassten Zuweisungen.
 

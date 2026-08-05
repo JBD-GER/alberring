@@ -5,7 +5,15 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "playwright-report", "supabase/functions"] },
+  {
+    ignores: [
+      "dist",
+      ".vercel",
+      "coverage",
+      "playwright-report",
+      "supabase/functions",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ["scripts/**/*.mjs"], languageOptions: { globals: globals.node } },

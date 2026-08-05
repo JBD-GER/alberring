@@ -3,17 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.12.1",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/validate-env.mjs && tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test",
     "supabase:build:setup": "node scripts/build-supabase-setup.mjs",
-    "supabase:deploy:functions": "npx supabase functions deploy --use-api",
+    "supabase:deploy:functions": "npx --yes supabase@2.111.0 functions deploy --use-api",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -25,7 +30,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-hook-form": "7.81.0",
-    "react-router-dom": "7.18.1",
+    "react-router": "8.3.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

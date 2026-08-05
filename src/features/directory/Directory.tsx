@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Mail, MapPin, MessageCircle, Search, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 type Employee = {

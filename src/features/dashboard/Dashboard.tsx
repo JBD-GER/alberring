@@ -13,7 +13,7 @@ import {
   Umbrella,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAuth } from "../auth/AuthProvider";

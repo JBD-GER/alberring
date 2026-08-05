@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation } from "react-router";
 import { useAuth } from "../features/auth/AuthProvider";
 export function ProtectedRoute() {
   const { session, appSession, loading, signOut } = useAuth();

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router";
 import {
   CalendarCheck2,
   Eye,
@@ -7,6 +7,7 @@ import {
   HeartHandshake,
   ShieldCheck,
 } from "lucide-react";
+import { passwordChangeErrorMessage } from "../../lib/auth-errors";
 import { supabase } from "../../lib/supabase";
 import { loginSchema, passwordSchema } from "../../lib/validation";
 import { useAuth } from "./AuthProvider";
@@ -30,13 +31,20 @@ function AuthFrame({
         />
         <div className="auth-brand-copy">
           <span className="eyebrow">Mitarbeiter-App</span>
-          <h2>Pflege im Team.<br />Einfach organisiert.</h2>
+          <h2>
+            Pflege im Team.
+            <br />
+            Einfach organisiert.
+          </h2>
           <p>
-            Dienstplan, Kommunikation und alle wichtigen Abläufe sicher an
-            einem Ort.
+            Dienstplan, Kommunikation und alle wichtigen Abläufe sicher an einem
+            Ort.
           </p>
         </div>
-        <div className="auth-benefits" aria-label="Vorteile der Mitarbeiter-App">
+        <div
+          className="auth-benefits"
+          aria-label="Vorteile der Mitarbeiter-App"
+        >
           <span>
             <CalendarCheck2 />
             Dienstplan jederzeit griffbereit
@@ -206,7 +214,12 @@ export function ResetPassword() {
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: a });
     if (error) {
-      setMessage("Der Link ist ungültig oder abgelaufen.");
+      setMessage(
+        passwordChangeErrorMessage(
+          error,
+          "Der Link ist ungültig oder abgelaufen.",
+        ),
+      );
       setBusy(false);
       return;
     }
@@ -300,7 +313,10 @@ export function AcceptInvite() {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       setMessage(
-        "Die Einladung ist ungültig oder abgelaufen. Fordern Sie eine neue Einladung an.",
+        passwordChangeErrorMessage(
+          error,
+          "Die Einladung ist ungültig oder abgelaufen. Fordern Sie eine neue Einladung an.",
+        ),
       );
       setBusy(false);
       return;

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Activity, Database, PlugZap, Search, ShieldAlert } from "lucide-react";
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate } from "react-router";
 import { format } from "date-fns";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";

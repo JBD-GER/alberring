@@ -10,7 +10,7 @@ import {
   Plus,
   Send,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { supabase } from "../../lib/supabase";

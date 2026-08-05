@@ -10,8 +10,7 @@ export default defineConfig({
       manifest: {
         name: "Alberring Mitarbeiter-App",
         short_name: "Alberring",
-        description:
-          "Die Mitarbeiter-App für Alberring Ambulante Pflege.",
+        description: "Die Mitarbeiter-App für Alberring Ambulante Pflege.",
         lang: "de",
         dir: "ltr",
         categories: ["business", "productivity", "medical"],
@@ -51,5 +50,11 @@ export default defineConfig({
     }),
   ],
   server: { port: 5173 },
-  test: { exclude: ["src/test/e2e/**", "node_modules/**"] },
+  test: {
+    exclude: [
+      "src/test/e2e/**",
+      "supabase/functions/**/*.test.ts",
+      "node_modules/**",
+    ],
+  },
 });

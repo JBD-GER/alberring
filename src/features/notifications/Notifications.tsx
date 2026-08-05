@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck, Circle, ExternalLink } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { formatDistanceToNow } from "date-fns";
 import { de } from "date-fns/locale";
 import { supabase } from "../../lib/supabase";

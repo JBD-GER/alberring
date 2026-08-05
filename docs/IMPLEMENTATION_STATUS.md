@@ -1,6 +1,6 @@
 # Implementierungsstatus
 
-Stand: 10.07.2026. „Implementiert“ bedeutet hier: Quellcode, Datenmodell und UI-Pfad sind im Repository vorhanden. Es bedeutet ausdrücklich nicht, dass die Komponenten bereits in einem produktiven Supabase-Projekt deployed, mit echten Rollen abgenommen oder organisatorisch freigegeben wurden.
+Stand: 05.08.2026. Repository, produktives Supabase-Projekt und Vercel-Deployment wurden gemeinsam geprüft. „Implementiert“ bedeutet weiterhin nicht, dass externe Dienste oder organisatorische Betriebsfreigaben ohne die dafür nötigen Zugangsdaten abgeschlossen sind.
 
 ## Im Repository implementiert
 
@@ -23,25 +23,27 @@ Stand: 10.07.2026. „Implementiert“ bedeutet hier: Quellcode, Datenmodell und
 
 ## In diesem Arbeitsstand erfolgreich ausgeführt
 
-| Prüfung | Ergebnis |
-| --- | --- |
-| `npm run typecheck` | erfolgreich |
-| `npm run lint` | erfolgreich, 0 Warnungen erlaubt |
-| `npm run test` | 9/9 Vitest-Tests erfolgreich |
-| `npm run build` | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker |
-| `npm run test:e2e` | 10/10 öffentliche Playwright-Läufe erfolgreich: 5 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite |
-| Deno `check` aller 9 Edge Functions | erfolgreich |
-| `npx supabase db reset` | nicht ausgeführt; Docker steht in dieser Arbeitsumgebung nicht zur Verfügung |
-| `npx supabase test db` | nicht ausgeführt; die vorhandenen 22 pgTAP-Prüfungen sind daher noch kein bestätigter Laufnachweis |
+| Prüfung                             | Ergebnis                                                                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                 | erfolgreich                                                                                                                  |
+| `npm run lint`                      | erfolgreich, 0 Warnungen erlaubt                                                                                             |
+| `npm run format:check`              | erfolgreich                                                                                                                  |
+| `npm audit --audit-level=high`      | 0 bekannte Schwachstellen                                                                                                    |
+| `npm run test`                      | 14/14 Vitest-Tests erfolgreich                                                                                               |
+| `npm run build`                     | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker                                                             |
+| `npm run test:e2e`                  | 10/10 öffentliche Playwright-Läufe erfolgreich: 5 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite |
+| Deno `check` aller 9 Edge Functions | erfolgreich                                                                                                                  |
+| Deno-Tests der Shared Edge-Logik    | 7/7 erfolgreich                                                                                                              |
+| Supabase DB-Lint `public,private`   | direkt gegen das verknüpfte Projekt erfolgreich, keine Schemafehler                                                          |
+| pgTAP gegen das verknüpfte Projekt  | 141/141 Assertions in Rollback-Transaktionen erfolgreich: 54 RLS/Storage, 41 Workflows, 38 RPC-Invarianten, 8 Scheduler      |
+| Produktions-CORS/Redirects          | Vercel-Origin, Invite- und Reset-Route live verifiziert                                                                      |
 
 Die Playwright-Suite prüft derzeit ausschließlich öffentliche Auth-/Routing-/Responsive-/Accessibility-Pfade mit dem gebauten Frontend. Sie meldet sich nicht gegen ein echtes Supabase-Staging an und ersetzt keine Mehrrollen- oder RLS-Abnahme.
 
 ## Vor produktiver Freigabe noch erforderlich
 
-- [ ] Das passende SQL-Bundle auf das tatsächliche Zielprojekt anwenden und Migration, Bootstrap, Buckets, Realtime und RPCs dort verifizieren.
-- [ ] Auth-Produktionskonfiguration abschließen: Sign-ups aus, Passwortregeln, Site-/Redirect-URLs, eigene SMTP-Zugangsdaten und reale Invite-/Recovery-Mailtests.
-- [ ] Alle Edge Functions und Secrets deployen sowie die vier Automationsjobs als überwachte Cron-Aufrufe konfigurieren.
-- [ ] Die pgTAP-Suite mit Docker ausführen und echte Supabase-E2E-Szenarien für Mitarbeiter, Teamleitung, Disposition, HR, Fuhrpark, Administration und organisationsfremde Benutzer ergänzen.
+- [ ] Eigene SMTP-Zugangsdaten in Supabase hinterlegen und die automatische Invite-/Recovery-Mailzustellung mit einer realen externen Mitarbeiteradresse vollständig abnehmen. Mitarbeiter können bis dahin über den geschützten manuellen Einmal-Link eingeladen werden; Site URL, Redirects, Sign-up-Sperre, Passwortregeln und Leak-Prüfung sind bereits produktiv gesetzt.
+- [ ] Authentifizierte Mehrrollen-E2E-Szenarien für Mitarbeiter, Teamleitung, Disposition, HR, Fuhrpark, Administration und organisationsfremde Benutzer mit freigegebenen Testkonten automatisieren. Die Datenbankgrenzen selbst sind durch pgTAP abgedeckt.
 - [ ] E-Mail- und Push-Provider für fachliche Benachrichtigungen auswählen, datenschutzrechtlich freigeben und implementieren. Aktuell ist nur In-App-Zustellung aktiv; andere Kanäle werden bewusst übersprungen.
 - [ ] Das echte Betreiber-Gebäudebild unter `src/assets/brand/building.jpg` bereitstellen und visuell abnehmen. Bis dahin bleibt die gestaltete Markenfläche ohne Stockfoto bestehen.
 - [ ] Produktionsbetrieb absichern: Backup/PITR und Restore-Probe, Monitoring/Alarmierung, MFA für privilegierte Rollen, Rate Limits, Aufbewahrungs-/Löschkonzept, Datenschutzfreigabe und Incident-Verantwortlichkeiten.
@@ -55,4 +57,4 @@ Die Playwright-Suite prüft derzeit ausschließlich öffentliche Auth-/Routing-/
 - Last-, Restore-, Penetrations- und manuelle Accessibility-Tests mit realen Daten/Rollen stehen noch aus.
 - Onboarding ist nur als deaktiviertes Feature-Flag und Datenmodell vorbereitet, wie für den ersten Release vorgesehen.
 
-Damit ist der Entwicklungsstand umfangreich und lokal baubar, aber noch nicht ehrlich als „komplett produktionsfertig“ zu bezeichnen. Der letzte Schritt ist nicht weiteres Mock-up, sondern die reale Supabase-/SMTP-/Cron-Konfiguration und eine rollenbasierte Staging-Abnahme.
+Der technische Stand ist gebaut, migriert und gegen Produktion geprüft. Mitarbeiteranlage und Invite-Annahme funktionieren auch ohne externen SMTP-Dienst über einen geschützten manuellen Einmal-Link. Für den vollständig automatischen Mailversand fehlen weiterhin Betreiber-Zugangsdaten; die App meldet deshalb keinen falschen Versandserfolg und legt den sicheren Fallback offen.

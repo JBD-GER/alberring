@@ -20,16 +20,50 @@
   text-align: left;
   align-content: center;
 }
-.document-folder svg { color: var(--primary); }
-.document-folder strong { align-self: center; }
-.document-folder span { grid-column: 2; color: var(--muted); font-size: 12px; }
-.document-folder:hover, .document-folder.active { border-color: var(--primary); background: var(--primary-soft); }
-.document-folder.protected svg { color: #8b5a23; }
-.document-folder.add { border-style: dashed; }
-.ack-review { margin-top: 14px; display: grid; gap: 10px; }
-.ack-person-list { display: grid; gap: 7px; width: min(100%, 520px); }
-.ack-person-list > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 12px; border-radius: 9px; background: #fff; }
-.ack-person-list span { color: var(--muted); font-size: 13px; }
+.document-folder svg {
+  color: var(--primary);
+}
+.document-folder strong {
+  align-self: center;
+}
+.document-folder span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+}
+.document-folder:hover,
+.document-folder.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.document-folder.protected svg {
+  color: #8b5a23;
+}
+.document-folder.add {
+  border-style: dashed;
+}
+.ack-review {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+.ack-person-list {
+  display: grid;
+  gap: 7px;
+  width: min(100%, 520px);
+}
+.ack-person-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #fff;
+}
+.ack-person-list span {
+  color: var(--muted);
+  font-size: 13px;
+}
 .document-row {
   background: #fff;
   border: 1px solid var(--border);

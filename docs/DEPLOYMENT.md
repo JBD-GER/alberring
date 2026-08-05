@@ -71,16 +71,30 @@ npx supabase functions deploy process-scheduled-news --no-verify-jwt
 
 Die fünf benutzeraufgerufenen Functions validieren das Supabase-JWT und die benötigte Permission selbst. Die vier Automations-Functions prüfen stattdessen bei jedem Aufruf den Header `x-automation-secret`; deshalb wird nur für diese Endpunkte `--no-verify-jwt` verwendet.
 
+Schlägt ausschließlich die Mailzustellung wegen fehlendem Provider oder Versandlimit fehl, erzeugen `admin-create-user` und `admin-resend-invite` serverseitig einen kurzlebigen Einmal-Link. Die App zeigt ihn nur der berechtigten Administration zum Kopieren an. Damit bleibt die Mitarbeiteranlage funktionsfähig; der Link muss über einen sicheren, zum Empfänger verifizierten Kanal übermittelt werden. Bei funktionierendem SMTP wird weiterhin automatisch versendet und kein Link an den Browser zurückgegeben.
+
 ## 6. Zeitpläne konfigurieren
 
-SQL installiert keinen externen Scheduler. In Supabase Cron oder einem gleichwertigen, abgesicherten Scheduler HTTPS-POST-Aufrufe mit dem Header `x-automation-secret: <AUTOMATION_SECRET>` anlegen:
+Die Migration `20260805071735_configure_automation_scheduler.sql` installiert Supabase Cron/`pg_net` und die vier Zeitpläne. Die Zugangswerte liegen absichtlich nicht im SQL. In **Supabase Vault** müssen vorher oder anschließend exakt diese beiden Secrets angelegt werden:
 
-| Function | Empfohlener Takt | Zweck |
-| --- | --- | --- |
-| `process-scheduled-news` | jede Minute | fällige News atomar veröffentlichen |
-| `send-notification-batch` | jede bis fünf Minuten | In-App-Zustellungen verarbeiten |
-| `process-birthday-reminders` | täglich | berechtigte Admins erinnern |
-| `process-mileage-reminders` | täglich | Kilometerstände erinnern und eskalieren |
+- `alberring_project_url`: die Supabase-Projekt-URL, zum Beispiel `https://IHRE_PROJECT_REF.supabase.co`
+- `alberring_automation_secret`: exakt derselbe hochentropische Wert wie das Function-Secret `AUTOMATION_SECRET`
+
+Waren beide Vault-Secrets beim Migrationslauf schon vorhanden, werden die Jobs automatisch eingerichtet. Andernfalls nach dem Anlegen einmal im SQL Editor ausführen:
+
+```sql
+select private.configure_automation_schedules();
+```
+
+Die Funktion ist für Data-API-Rollen gesperrt und darf nur administrativ im SQL Editor ausgeführt werden. Die installierten Zeitpläne sind:
+
+| Function                     | Empfohlener Takt        | Zweck                                                                              |
+| ---------------------------- | ----------------------- | ---------------------------------------------------------------------------------- |
+| `process-scheduled-news`     | jede Minute             | fällige News atomar veröffentlichen                                                |
+| `send-notification-batch`    | alle fünf Minuten       | In-App-Zustellungen verarbeiten                                                    |
+| `process-birthday-reminders` | stündlich bei Minute 5  | einmal täglich idempotent erinnern; Fehler automatisch erneut versuchen            |
+| `process-mileage-reminders`  | stündlich bei Minute 15 | einmal täglich idempotent erinnern/eskalieren; Fehler automatisch erneut versuchen |
+| interne Log-Bereinigung      | täglich 03:40 UTC       | Cron-Läufe nach 30 und Jobprotokolle nach 90 Tagen entfernen                       |
 
 Die Jobs sind auf Wiederholungen ausgelegt und führen Job-/Deduplication-Protokolle. Trotzdem müssen Aufruf, Fehlerquote und Laufzeit im Produktivbetrieb überwacht werden. E-Mail- und Push-Zustellungen außerhalb von Supabase Auth sind derzeit nicht an einen Provider angebunden; `send-notification-batch` markiert solche Kanäle bewusst als `provider_not_configured` statt Daten an einen unbekannten Dienst zu senden.
 
@@ -105,8 +119,8 @@ Das Verzeichnis `dist/` als SPA veröffentlichen und einen Fallback aller App-Ro
 ## 8. Abnahme vor Einladungen
 
 - Ersten bestätigten Auth-Benutzer mit `bootstrap_first_admin(...)` verbinden und den Super-Admin-Login testen.
-- Invite- und Passwort-Reset-Mail mit der produktiven Domain vollständig durchspielen.
-- Einen Testbenutzer über die App einladen, Einladung annehmen und den Kontostatus prüfen.
+- Invite- und Passwort-Reset-Mail mit der produktiven Domain vollständig durchspielen; bis SMTP eingerichtet ist den manuellen Link-Fallback kontrolliert prüfen.
+- Einen Testbenutzer über die App einladen, den automatisch versendeten oder manuell sicher übergebenen Link annehmen und den Kontostatus prüfen.
 - Je eine ungefährliche Aktion pro Rolle testen; besonders Chatmitgliedschaft, Teamgrenzen, Urlaubsfreigabe und Attestdownload.
 - pgTAP/RLS-Tests gegen eine frische lokale Supabase-Instanz ausführen.
 - Backup/PITR, Restore-Probe, Log-Alarmierung, SMTP-Zustellung, Rate Limits und Verantwortlichkeiten dokumentieren.

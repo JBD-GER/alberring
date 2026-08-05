@@ -11,7 +11,8 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router";
+import { functionErrorMessage } from "../../lib/function-errors";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 type UserRow = {
@@ -39,6 +40,48 @@ type Role = {
   role_permissions: Array<{ permission_key: string }>;
 };
 type Team = { id: string; name: string };
+type InviteDelivery = {
+  delivery?: "email" | "manual_link";
+  manualInviteUrl?: string | null;
+  warning?: { message?: string };
+};
+
+function ManualInviteLink({ url }: { url: string }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+  const copy = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard_unavailable");
+      await navigator.clipboard.writeText(url);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  };
+  return (
+    <div className="manual-invite-link full">
+      <label>
+        Einmaliger Einladungslink
+        <input
+          aria-label="Einmaliger Einladungslink"
+          readOnly
+          value={url}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      </label>
+      <div className="form-actions">
+        <button type="button" className="secondary" onClick={copy}>
+          Link kopieren
+        </button>
+        {copyState === "copied" && <span role="status">Link kopiert.</span>}
+        {copyState === "error" && (
+          <span role="alert">Bitte markieren und manuell kopieren.</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function AdminUsers() {
   const { has } = useAuth();
@@ -64,7 +107,13 @@ export function AdminUsers() {
         "admin-update-user-status",
         { body: { profileId: input.id, status: input.status } },
       );
-      if (error) throw error;
+      if (error)
+        throw new Error(
+          await functionErrorMessage(
+            error,
+            "Der Benutzerstatus konnte nicht geändert werden.",
+          ),
+        );
       if (data?.error) throw new Error(data.error.message);
     },
     onSuccess: () =>
@@ -76,9 +125,15 @@ export function AdminUsers() {
         "admin-resend-invite",
         { body: { profileId: id } },
       );
-      if (error) throw error;
+      if (error)
+        throw new Error(
+          await functionErrorMessage(
+            error,
+            "Die Einladung konnte nicht erneut versendet werden.",
+          ),
+        );
       if (data?.error) throw new Error(data.error.message);
-      return data as { warning?: { message?: string } };
+      return data as InviteDelivery;
     },
   });
   if (!has("users.view") && !has("users.manage"))
@@ -123,14 +178,20 @@ export function AdminUsers() {
       </label>
       {(status.error || resend.error) && (
         <div className="alert error">
-          Administrative Aktion konnte nicht ausgeführt werden.
+          {(status.error ?? resend.error)?.message ??
+            "Administrative Aktion konnte nicht ausgeführt werden."}
         </div>
       )}
       {resend.isSuccess && (
-        <div className={`alert ${resend.data?.warning ? "" : "success"}`}>
-          {resend.data?.warning?.message ??
-            "Einladung wurde erneut versendet."}
-        </div>
+        <>
+          <div className={`alert ${resend.data?.warning ? "" : "success"}`}>
+            {resend.data?.warning?.message ??
+              "Einladung wurde erneut versendet."}
+          </div>
+          {resend.data?.manualInviteUrl && (
+            <ManualInviteLink url={resend.data.manualInviteUrl} />
+          )}
+        </>
       )}
       {isLoading ? (
         <div className="skeleton-list">
@@ -647,14 +708,22 @@ function InviteForm({ onDone }: { onDone: () => void }) {
         "admin-create-user",
         { body: payload },
       );
-      if (error) throw error;
+      if (error)
+        throw new Error(
+          await functionErrorMessage(
+            error,
+            "Einladung konnte nicht versendet werden.",
+          ),
+        );
       if (data?.error) throw new Error(data.error.message);
-      return data;
+      return data as InviteDelivery;
     },
-    onSuccess: () =>
+    onSuccess: (data) =>
       setMessage({
         type: "success",
-        text: "Einladung wurde versendet. Der Benutzer erscheint nach dem Schließen in der Liste.",
+        text:
+          data.warning?.message ??
+          "Einladung wurde versendet. Der Benutzer erscheint nach dem Schließen in der Liste.",
       }),
     onError: (e) =>
       setMessage({
@@ -720,13 +789,23 @@ function InviteForm({ onDone }: { onDone: () => void }) {
         {message && (
           <div className={`alert ${message.type} full`}>{message.text}</div>
         )}
+        {invite.data?.manualInviteUrl && (
+          <ManualInviteLink url={invite.data.manualInviteUrl} />
+        )}
         <div className="form-actions full">
           <button type="button" className="secondary" onClick={onDone}>
             Schließen
           </button>
-          <button className="primary" disabled={invite.isPending}>
+          <button
+            className="primary"
+            disabled={invite.isPending || invite.isSuccess}
+          >
             <MailPlus />{" "}
-            {invite.isPending ? "Einladung läuft …" : "Sicher einladen"}
+            {invite.isPending
+              ? "Einladung läuft …"
+              : invite.isSuccess
+                ? "Einladung erstellt"
+                : "Sicher einladen"}
           </button>
         </div>
       </form>
@@ -735,7 +814,7 @@ function InviteForm({ onDone }: { onDone: () => void }) {
 }
 
 export function AdminRoles() {
-  const { appSession, has } = useAuth();
+  const { has } = useAuth();
   const client = useQueryClient();
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -786,13 +865,8 @@ export function AdminRoles() {
   });
   const createRole = useMutation({
     mutationFn: async (form: HTMLFormElement) => {
-      if (!appSession) throw new Error();
       const name = String(new FormData(form).get("name")).trim();
-      const { error } = await supabase.from("roles").insert({
-        organization_id: appSession.profile.organization_id,
-        name,
-        active: true,
-      });
+      const { error } = await supabase.rpc("create_role", { p_name: name });
       if (error) throw error;
     },
     onSuccess: () => {

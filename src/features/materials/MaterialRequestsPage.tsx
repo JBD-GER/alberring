@@ -125,6 +125,10 @@ const statusTransitions: Record<MaterialStatus, MaterialStatus[]> = {
   completed: [],
   cancelled: [],
 };
+const approvalTransitions: Partial<Record<MaterialStatus, MaterialStatus[]>> = {
+  submitted: ["approved", "rejected"],
+  review: ["approved", "rejected"],
+};
 const categoryLabel = (value: string) =>
   categories.find((category) => category.value === value)?.label ?? value;
 
@@ -160,7 +164,11 @@ export function MaterialRequestsPage() {
     has("materials.view_team") ||
     has("materials.manage") ||
     has("materials.approve");
-  const canProcess = has("materials.manage") || has("materials.approve");
+  const canManage = has("materials.manage");
+  const canApprove = has("materials.approve");
+  const canProcess = canManage || canApprove;
+  const availableTransitions = (status: MaterialStatus) =>
+    canManage ? statusTransitions[status] : (approvalTransitions[status] ?? []);
 
   const requestsQuery = useQuery({
     queryKey: ["material-requests"],
@@ -249,6 +257,7 @@ export function MaterialRequestsPage() {
       {statusRequest && canProcess ? (
         <MaterialStatusPanel
           request={statusRequest}
+          availableStatuses={availableTransitions(statusRequest.status)}
           onClose={() => setStatusRequest(null)}
         />
       ) : null}
@@ -422,7 +431,7 @@ export function MaterialRequestsPage() {
                   ) : null}
                   {!own &&
                   canProcess &&
-                  !terminalStatuses.includes(request.status) ? (
+                  availableTransitions(request.status).length > 0 ? (
                     <button
                       type="button"
                       className="wf-primary"
@@ -631,13 +640,14 @@ function MaterialEditor({
 
 function MaterialStatusPanel({
   request,
+  availableStatuses,
   onClose,
 }: {
   request: MaterialRequest;
+  availableStatuses: MaterialStatus[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const availableStatuses = statusTransitions[request.status];
   const [status, setStatus] = useState<MaterialStatus>(
     availableStatuses[0] ?? request.status,
   );

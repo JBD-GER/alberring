@@ -14,7 +14,7 @@ import {
   User,
   Users,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { passwordSchema } from "../../lib/validation";
 import { useAuth } from "../auth/AuthProvider";
@@ -532,19 +532,17 @@ export function More() {
                 <p>{group.description}</p>
               </header>
               <div className="more-grid">
-                {groupLinks.map(
-                  ({ to, label, description, icon: Icon }) => (
-                    <Link to={to} key={to}>
-                      <span>
-                        <Icon />
-                      </span>
-                      <div>
-                        <strong>{label}</strong>
-                        <small>{description}</small>
-                      </div>
-                    </Link>
-                  ),
-                )}
+                {groupLinks.map(({ to, label, description, icon: Icon }) => (
+                  <Link to={to} key={to}>
+                    <span>
+                      <Icon />
+                    </span>
+                    <div>
+                      <strong>{label}</strong>
+                      <small>{description}</small>
+                    </div>
+                  </Link>
+                ))}
               </div>
             </section>
           );

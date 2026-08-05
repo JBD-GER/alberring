@@ -126,6 +126,25 @@ select set_config(
   ),
   true
 );
+
+-- Model a deliberately restarted tour after an earlier completed cycle. A
+-- fresh completion must create one new audit event, while retries within that
+-- same cycle remain idempotent.
+insert into public.audit_logs(
+  organization_id,actor_id,action,entity_type,entity_id,metadata
+)
+select
+  profile.organization_id,profile.id,'admin.product_tour_completed',
+  'profile',profile.id,'{"step":6,"version":1,"fixture":true}'::jsonb
+from public.profiles profile
+where lower(profile.email)='info@alberring.de'
+  and not exists(
+    select 1 from public.audit_logs audit
+    where audit.organization_id=profile.organization_id
+      and audit.actor_id=profile.id
+      and audit.action='admin.product_tour_completed'
+  );
+
 select set_config(
   'pgtap.tour_audit_before',
   (

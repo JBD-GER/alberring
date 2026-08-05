@@ -1013,7 +1013,7 @@ export function AdminTeams() {
       const { data, error } = await supabase
         .from("teams")
         .select(
-          "id,name,location_name,active,lead_profile_id,profiles!teams_lead_profile_id_fkey(display_name)",
+          "id,name,location_name,active,lead_profile_id,locations(name),profiles!teams_lead_profile_id_fkey(display_name)",
         )
         .order("name");
       if (error) throw error;
@@ -1022,6 +1022,7 @@ export function AdminTeams() {
         name: string;
         location_name: string | null;
         active: boolean;
+        locations: { name: string } | null;
         profiles: { display_name: string } | null;
       }>;
     },
@@ -1031,9 +1032,12 @@ export function AdminTeams() {
     mutationFn: async (form: HTMLFormElement) => {
       if (!appSession) throw new Error();
       const fd = new FormData(form);
+      const name = String(fd.get("name")).trim();
+      if (name.length < 2)
+        throw new Error("Der Teamname muss mindestens zwei Zeichen enthalten.");
       const { error } = await supabase.from("teams").insert({
         organization_id: appSession.profile.organization_id,
-        name: String(fd.get("name")).trim(),
+        name,
         location_name: String(fd.get("location")).trim() || null,
         active: true,
       });
@@ -1058,7 +1062,7 @@ export function AdminTeams() {
   if (!has("teams.manage")) return <Navigate to="/app/dashboard" replace />;
   return (
     <div className="page-stack">
-      <section className="page-intro">
+      <section className="page-intro" data-tour-id="admin">
         <div>
           <h2>Teams und Standorte</h2>
           <p>
@@ -1080,7 +1084,7 @@ export function AdminTeams() {
           >
             <label>
               Teamname
-              <input name="name" required maxLength={120} />
+              <input name="name" required minLength={2} maxLength={120} />
             </label>
             <label>
               Standort
@@ -1121,8 +1125,10 @@ export function AdminTeams() {
                 </span>
                 <h3>{team.name}</h3>
                 <p>
-                  {team.location_name ?? "Kein Standort"} ·{" "}
-                  {team.profiles?.display_name ?? "Keine Teamleitung"}
+                  {team.locations?.name ??
+                    team.location_name ??
+                    "Kein Standort"}{" "}
+                  · {team.profiles?.display_name ?? "Keine Teamleitung"}
                 </p>
               </div>
               <button className="secondary" onClick={() => toggle.mutate(team)}>
@@ -1191,7 +1197,7 @@ export function AdminHome() {
   ];
   return (
     <div className="page-stack">
-      <section className="page-intro">
+      <section className="page-intro" data-tour-id="admin">
         <div>
           <h2>Administration</h2>
           <p>Sichere Verwaltung für berechtigte Rollen.</p>

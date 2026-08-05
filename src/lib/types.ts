@@ -15,6 +15,14 @@ export interface AppSession {
     eligible: boolean;
     completedAt: string | null;
   };
+  productTour: {
+    required: boolean;
+    eligible: boolean;
+    completedAt: string | null;
+    currentStep: number;
+    version: number;
+    deferredUntil: string | null;
+  };
 }
 export interface NavItem {
   to: string;

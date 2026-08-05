@@ -29,18 +29,31 @@ type OnboardingState = {
   eligible: boolean;
 };
 
+type ProductTourState = OnboardingState & {
+  current_step: number;
+  version: number;
+  deferred_until: string | null;
+};
+
 const fetchAppSession = async (): Promise<AppSession | null> => {
-  const [profileResult, permissionsResult, onboardingResult] =
-    await Promise.all([
-      supabase.rpc("get_my_profile").maybeSingle(),
-      supabase.rpc("my_permissions"),
-      supabase.rpc("get_my_onboarding_state").maybeSingle(),
-    ]);
+  const [
+    profileResult,
+    permissionsResult,
+    onboardingResult,
+    productTourResult,
+  ] = await Promise.all([
+    supabase.rpc("get_my_profile").maybeSingle(),
+    supabase.rpc("my_permissions"),
+    supabase.rpc("get_my_onboarding_state").maybeSingle(),
+    supabase.rpc("get_my_product_tour_state").maybeSingle(),
+  ]);
   if (profileResult.error) throw profileResult.error;
   if (permissionsResult.error) throw permissionsResult.error;
   if (onboardingResult.error) throw onboardingResult.error;
+  if (productTourResult.error) throw productTourResult.error;
   if (!profileResult.data) return null;
   const onboarding = onboardingResult.data as OnboardingState | null;
+  const productTour = productTourResult.data as ProductTourState | null;
   return {
     profile: profileResult.data as Profile,
     permissions: (permissionsResult.data ?? []).map(
@@ -50,6 +63,14 @@ const fetchAppSession = async (): Promise<AppSession | null> => {
       required: Boolean(onboarding?.required),
       eligible: Boolean(onboarding?.eligible),
       completedAt: onboarding?.completed_at ?? null,
+    },
+    productTour: {
+      required: Boolean(productTour?.required),
+      eligible: Boolean(productTour?.eligible),
+      completedAt: productTour?.completed_at ?? null,
+      currentStep: Number(productTour?.current_step ?? 0),
+      version: Number(productTour?.version ?? 0),
+      deferredUntil: productTour?.deferred_until ?? null,
     },
   };
 };

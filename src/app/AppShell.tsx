@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import {
   Bell,
@@ -14,12 +14,22 @@ import {
   Package,
   Settings,
   ShieldCheck,
+  Sparkles,
   Umbrella,
   Users,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../features/auth/AuthProvider";
+import { ProductTour } from "../features/onboarding/ProductTour";
 import { supabase } from "../lib/supabase";
+
+const tourTargetByRoute: Record<string, string> = {
+  "/app/dashboard": "dashboard",
+  "/app/messages": "messages",
+  "/app/schedule": "planning",
+  "/app/documents": "documents",
+  "/app/admin": "admin",
+};
 const primary = [
   {
     to: "/app/dashboard",
@@ -100,6 +110,8 @@ const more = [
 ];
 export function AppShell() {
   const { appSession, signOut, has } = useAuth();
+  const [manualTour, setManualTour] = useState(false);
+  const tourTriggerRef = useRef<HTMLButtonElement>(null);
   const loc = useLocation();
   const permitted = (permission?: string | string[]) =>
     !permission ||
@@ -225,7 +237,7 @@ export function AppShell() {
         <span className="sidebar-section-label">Mitarbeiter-App</span>
         <nav aria-label="Hauptnavigation">
           {all.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to}>
+            <NavLink key={to} to={to} data-tour-id={tourTargetByRoute[to]}>
               <span className="nav-icon">
                 <Icon size={19} strokeWidth={1.9} />
               </span>
@@ -264,6 +276,18 @@ export function AppShell() {
             </div>
           </div>
           <div className="top-actions">
+            {appSession?.productTour.eligible && (
+              <button
+                ref={tourTriggerRef}
+                type="button"
+                className="icon-button tour-trigger"
+                onClick={() => setManualTour(true)}
+                aria-label="Produkttour öffnen"
+                title="Produkttour öffnen"
+              >
+                <Sparkles />
+              </button>
+            )}
             <NavLink
               className="icon-button notification-button"
               to="/app/notifications"
@@ -282,7 +306,7 @@ export function AppShell() {
         </main>
         <nav className="bottom-nav" aria-label="Mobile Hauptnavigation">
           {visiblePrimary.slice(0, 4).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to}>
+            <NavLink key={to} to={to} data-tour-id={tourTargetByRoute[to]}>
               <span className="bottom-nav-icon">
                 <Icon strokeWidth={1.9} />
                 {to === "/app/messages" && badge(messagesUnread, "Nachrichten")}
@@ -298,6 +322,14 @@ export function AppShell() {
           </NavLink>
         </nav>
       </div>
+      <ProductTour
+        open={Boolean(appSession?.productTour.required || manualTour)}
+        manual={Boolean(manualTour && !appSession?.productTour.required)}
+        onClose={() => {
+          setManualTour(false);
+          window.requestAnimationFrame(() => tourTriggerRef.current?.focus());
+        }}
+      />
     </div>
   );
 }

@@ -7,7 +7,8 @@ Stand: 05.08.2026. Repository, produktives Supabase-Projekt und Vercel-Deploymen
 - [x] React 19, striktes TypeScript, Vite, React Router, TanStack Query, React Hook Form/Zod und date-fns
 - [x] Responsives App-Shell mit Desktop-Sidebar, mobiler Bottom-Navigation, Permission-Gates, Safe-Area-/Touch-Optimierung und installierbarer PWA
 - [x] Supabase Auth für Login, Session-Wiederherstellung, Logout, neutralen Passwort-Reset und Invite-Annahme; keine öffentliche Registrierung
-- [x] Vierstufiges Erst-Onboarding ausschließlich für das serverseitig geprüfte Konto `info@alberring.de`, einschließlich Organisation, Admin-Profil, Grundstruktur, Workflow-Regeln und Benachrichtigungsvorgaben
+- [x] Siebenstufiges Erst-Onboarding ausschließlich für das serverseitig doppelt geprüfte Konto `info@alberring.de`, einschließlich Organisation, Admin-Profil, mehrerer Teams, erster Mitarbeiter-Einladungen, sicherer Wiederaufnahme, Workflow-Regeln und Benachrichtigungsvorgaben
+- [x] Interaktive, routenbezogene „Mission Control“-Produkttour nach dem Onboarding mit Spotlight, echtem Einrichtungsstatus, mobilem Bottom-Sheet, serverseitigem Fortschritt/Aufschub und dauerhaftem manuellen Tourzugang nur für `info@alberring.de`
 - [x] Dashboard, Mitarbeiterverzeichnis, Benachrichtigungen, Profil und persönliche Einstellungen
 - [x] Direkt- und Gruppenchats mit Suche/Filtern, ungelesenen Zählern, Realtime, Antworten, Reaktionen, Bearbeiten/Zurückziehen, Pins, Lesestatus sowie privaten Bild-/PDF-Anhängen
 - [x] News-Feed und Detailansicht mit Zielgruppe Organisation/Team, Entwurf, Bearbeitung, geplanter oder direkter Veröffentlichung, Archivierung, Lesen und Bestätigen
@@ -24,20 +25,20 @@ Stand: 05.08.2026. Repository, produktives Supabase-Projekt und Vercel-Deploymen
 
 ## In diesem Arbeitsstand erfolgreich ausgeführt
 
-| Prüfung                             | Ergebnis                                                                                                                                                   |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run typecheck`                 | erfolgreich                                                                                                                                                |
-| `npm run lint`                      | erfolgreich, 0 Warnungen erlaubt                                                                                                                           |
-| `npm run format:check`              | erfolgreich                                                                                                                                                |
-| `npm audit --audit-level=high`      | 0 bekannte Schwachstellen                                                                                                                                  |
-| `npm run test`                      | 14/14 Vitest-Tests erfolgreich                                                                                                                             |
-| `npm run build`                     | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker                                                                                           |
-| `npm run test:e2e`                  | 12/12 öffentliche Playwright-Läufe erfolgreich: 6 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite                               |
-| Deno `check` aller 9 Edge Functions | erfolgreich                                                                                                                                                |
-| Deno-Tests der Shared Edge-Logik    | 7/7 erfolgreich                                                                                                                                            |
-| Supabase DB-Lint `public,private`   | direkt gegen das verknüpfte Projekt erfolgreich, keine Schemafehler                                                                                        |
-| pgTAP gegen das verknüpfte Projekt  | 202/202 Assertions in Rollback-Transaktionen erfolgreich: 54 RLS/Storage, 41 Workflows, 38 RPC-Invarianten, 34 Data-API-Rechte, 8 Scheduler, 27 Onboarding |
-| Produktions-CORS/Redirects          | Vercel-Origin, Invite- und Reset-Route live verifiziert                                                                                                    |
+| Prüfung                             | Ergebnis                                                                                                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                 | erfolgreich                                                                                                                                                                      |
+| `npm run lint`                      | erfolgreich, 0 Warnungen erlaubt                                                                                                                                                 |
+| `npm run format:check`              | erfolgreich                                                                                                                                                                      |
+| `npm audit --audit-level=high`      | 0 bekannte Schwachstellen                                                                                                                                                        |
+| `npm run test`                      | 19/19 Vitest-Tests erfolgreich                                                                                                                                                   |
+| `npm run build`                     | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker                                                                                                                 |
+| `npm run test:e2e`                  | 12/12 öffentliche Playwright-Läufe erfolgreich: 6 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite                                                     |
+| Deno `check` aller 9 Edge Functions | erfolgreich                                                                                                                                                                      |
+| Deno-Tests der Shared Edge-Logik    | 7/7 erfolgreich                                                                                                                                                                  |
+| Supabase DB-Lint `public,private`   | direkt gegen das verknüpfte Projekt erfolgreich, keine Schemafehler                                                                                                              |
+| pgTAP gegen das verknüpfte Projekt  | 263/263 Assertions in Rollback-Transaktionen erfolgreich: 54 RLS/Storage, 41 Workflows, 38 RPC-Invarianten, 34 Data-API-Rechte, 8 Scheduler, 51 Onboarding, 37 Exklusivität/Tour |
+| Produktions-CORS/Redirects          | Vercel-Origin, Invite- und Reset-Route live verifiziert                                                                                                                          |
 
 Die Playwright-Suite prüft derzeit ausschließlich öffentliche Auth-/Routing-/Responsive-/Accessibility-Pfade mit dem gebauten Frontend. Sie meldet sich nicht gegen ein echtes Supabase-Staging an und ersetzt keine Mehrrollen- oder RLS-Abnahme.
 

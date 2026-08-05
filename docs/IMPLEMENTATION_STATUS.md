@@ -23,20 +23,20 @@ Stand: 05.08.2026. Repository, produktives Supabase-Projekt und Vercel-Deploymen
 
 ## In diesem Arbeitsstand erfolgreich ausgeführt
 
-| Prüfung                             | Ergebnis                                                                                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `npm run typecheck`                 | erfolgreich                                                                                                                  |
-| `npm run lint`                      | erfolgreich, 0 Warnungen erlaubt                                                                                             |
-| `npm run format:check`              | erfolgreich                                                                                                                  |
-| `npm audit --audit-level=high`      | 0 bekannte Schwachstellen                                                                                                    |
-| `npm run test`                      | 14/14 Vitest-Tests erfolgreich                                                                                               |
-| `npm run build`                     | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker                                                             |
-| `npm run test:e2e`                  | 10/10 öffentliche Playwright-Läufe erfolgreich: 5 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite |
-| Deno `check` aller 9 Edge Functions | erfolgreich                                                                                                                  |
-| Deno-Tests der Shared Edge-Logik    | 7/7 erfolgreich                                                                                                              |
-| Supabase DB-Lint `public,private`   | direkt gegen das verknüpfte Projekt erfolgreich, keine Schemafehler                                                          |
-| pgTAP gegen das verknüpfte Projekt  | 141/141 Assertions in Rollback-Transaktionen erfolgreich: 54 RLS/Storage, 41 Workflows, 38 RPC-Invarianten, 8 Scheduler      |
-| Produktions-CORS/Redirects          | Vercel-Origin, Invite- und Reset-Route live verifiziert                                                                      |
+| Prüfung                             | Ergebnis                                                                                                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                 | erfolgreich                                                                                                                                 |
+| `npm run lint`                      | erfolgreich, 0 Warnungen erlaubt                                                                                                            |
+| `npm run format:check`              | erfolgreich                                                                                                                                 |
+| `npm audit --audit-level=high`      | 0 bekannte Schwachstellen                                                                                                                   |
+| `npm run test`                      | 14/14 Vitest-Tests erfolgreich                                                                                                              |
+| `npm run build`                     | erfolgreicher Produktionsbuild einschließlich PWA-Service-Worker                                                                            |
+| `npm run test:e2e`                  | 10/10 öffentliche Playwright-Läufe erfolgreich: 5 Szenarien auf Desktop und Mobil, einschließlich axe-Prüfung der Loginseite                |
+| Deno `check` aller 9 Edge Functions | erfolgreich                                                                                                                                 |
+| Deno-Tests der Shared Edge-Logik    | 7/7 erfolgreich                                                                                                                             |
+| Supabase DB-Lint `public,private`   | direkt gegen das verknüpfte Projekt erfolgreich, keine Schemafehler                                                                         |
+| pgTAP gegen das verknüpfte Projekt  | 175/175 Assertions in Rollback-Transaktionen erfolgreich: 54 RLS/Storage, 41 Workflows, 38 RPC-Invarianten, 34 Data-API-Rechte, 8 Scheduler |
+| Produktions-CORS/Redirects          | Vercel-Origin, Invite- und Reset-Route live verifiziert                                                                                     |
 
 Die Playwright-Suite prüft derzeit ausschließlich öffentliche Auth-/Routing-/Responsive-/Accessibility-Pfade mit dem gebauten Frontend. Sie meldet sich nicht gegen ein echtes Supabase-Staging an und ersetzt keine Mehrrollen- oder RLS-Abnahme.
 

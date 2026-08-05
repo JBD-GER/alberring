@@ -84,6 +84,7 @@ Die fachlich maßgeblichen Migrationsquellen bleiben:
 17. `20260805072000_workflow_authorization_hardening.sql` – geschlossene Workflow-, Datei- und Mandantengrenzen
 18. `20260805075000_harden_storage_and_default_privileges.sql` – referenzsicherer Storage-Cleanup und minimale Data-API-Standardrechte
 19. `20260805075500_harden_workflow_rpc_invariants.sql` – Invite-, Rollen- und Workflow-Invarianten an der Datenbankgrenze
+20. `20260805082500_restore_authenticated_data_api_grants.sql` – explizite, sichere Data-API-Rechte auch auf vollständig frischen Projekten
 
 `SETUP_FRESH.sql` und `SETUP_UPGRADE_20260710.sql` sind die bequemen Installationsbundles für den SQL Editor. Sie werden mit `npm run supabase:build:setup` vollständig aus den versionierten Migrationen und `seed.sql` erzeugt. Die Einzelmigrationen bleiben die maßgebliche Quelle.
 
@@ -169,7 +170,7 @@ Einladungs- und Recovery-Mails laufen über Supabase Auth und benötigen für au
 
 ## Tests und aktueller Nachweis
 
-Die vier Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 141 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten sowie 8 für den Automations-Scheduler. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
+Die fünf Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 175 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten, 34 für Data-API-Rechte sowie 8 für den Automations-Scheduler. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
 
 Ausführung mit lokaler Supabase CLI und Docker:
 

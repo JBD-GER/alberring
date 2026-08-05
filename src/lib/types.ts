@@ -10,6 +10,11 @@ export interface Profile {
 export interface AppSession {
   profile: Profile;
   permissions: string[];
+  onboarding: {
+    required: boolean;
+    eligible: boolean;
+    completedAt: string | null;
+  };
 }
 export interface NavItem {
   to: string;

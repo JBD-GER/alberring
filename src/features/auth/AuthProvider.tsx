@@ -1,4 +1,5 @@
 import {
+  useCallback,
   createContext,
   useContext,
   useEffect,
@@ -17,9 +18,41 @@ type AuthValue = {
   loading: boolean;
   recoverySession: boolean;
   signOut: () => Promise<void>;
+  refreshAppSession: () => Promise<void>;
   has: (key: string) => boolean;
 };
 const AuthContext = createContext<AuthValue | null>(null);
+
+type OnboardingState = {
+  required: boolean;
+  completed_at: string | null;
+  eligible: boolean;
+};
+
+const fetchAppSession = async (): Promise<AppSession | null> => {
+  const [profileResult, permissionsResult, onboardingResult] =
+    await Promise.all([
+      supabase.rpc("get_my_profile").maybeSingle(),
+      supabase.rpc("my_permissions"),
+      supabase.rpc("get_my_onboarding_state").maybeSingle(),
+    ]);
+  if (profileResult.error) throw profileResult.error;
+  if (permissionsResult.error) throw permissionsResult.error;
+  if (onboardingResult.error) throw onboardingResult.error;
+  if (!profileResult.data) return null;
+  const onboarding = onboardingResult.data as OnboardingState | null;
+  return {
+    profile: profileResult.data as Profile,
+    permissions: (permissionsResult.data ?? []).map(
+      (permission: { permission_key: string }) => permission.permission_key,
+    ),
+    onboarding: {
+      required: Boolean(onboarding?.required),
+      eligible: Boolean(onboarding?.eligible),
+      completedAt: onboarding?.completed_at ?? null,
+    },
+  };
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
@@ -49,22 +82,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setLoading(true);
-      const [{ data: profile }, { data: permissions }] = await Promise.all([
-        supabase.rpc("get_my_profile").maybeSingle(),
-        supabase.rpc("my_permissions"),
-      ]);
-      if (!active || generation !== hydrationGeneration.current) return;
-      setAppSession(
-        profile
-          ? {
-              profile: profile as Profile,
-              permissions: (permissions ?? []).map(
-                (p: { permission_key: string }) => p.permission_key,
-              ),
-            }
-          : null,
-      );
-      setLoading(false);
+      try {
+        const hydratedAppSession = await fetchAppSession();
+        if (!active || generation !== hydrationGeneration.current) return;
+        setAppSession(hydratedAppSession);
+        setLoading(false);
+      } catch {
+        if (!active || generation !== hydrationGeneration.current) return;
+        setAppSession(null);
+        setLoading(false);
+      }
     };
     void supabase.auth.getSession().then(({ data }) => hydrate(data.session));
     const { data } = supabase.auth.onAuthStateChange(
@@ -75,6 +102,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data.subscription.unsubscribe();
     };
   }, [queryClient]);
+
+  const refreshAppSession = useCallback(async () => {
+    if (!session) {
+      setAppSession(null);
+      return;
+    }
+    const generation = ++hydrationGeneration.current;
+    setLoading(true);
+    try {
+      const hydratedAppSession = await fetchAppSession();
+      if (generation !== hydrationGeneration.current) return;
+      setAppSession(hydratedAppSession);
+      setLoading(false);
+    } catch (error) {
+      if (generation === hydrationGeneration.current) setLoading(false);
+      throw error;
+    }
+  }, [session]);
+
   const value = useMemo<AuthValue>(
     () => ({
       session,
@@ -84,9 +130,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut: async () => {
         await supabase.auth.signOut();
       },
+      refreshAppSession,
       has: (key) => Boolean(appSession?.permissions.includes(key)),
     }),
-    [session, appSession, loading, recoverySession],
+    [session, appSession, loading, recoverySession, refreshAppSession],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

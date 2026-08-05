@@ -489,7 +489,6 @@ export function AdminUserDetail() {
 type OrganizationSettings = {
   organization_id: string;
   timezone: string;
-  onboarding_enabled: boolean;
   leave_approval_steps: number;
   mileage_reminder_days: number[];
   mileage_overdue_day: number;
@@ -513,7 +512,7 @@ export function AdminSettings() {
       const { data, error } = await supabase
         .from("organization_settings")
         .select(
-          "organization_id,timezone,onboarding_enabled,leave_approval_steps,mileage_reminder_days,mileage_overdue_day,birthday_reminder_days,message_edit_window_minutes,max_document_folder_depth",
+          "organization_id,timezone,leave_approval_steps,mileage_reminder_days,mileage_overdue_day,birthday_reminder_days,message_edit_window_minutes,max_document_folder_depth",
         )
         .single();
       if (error) throw error;
@@ -533,7 +532,6 @@ export function AdminSettings() {
         .from("organization_settings")
         .update({
           timezone: String(values.get("timezone")),
-          onboarding_enabled: values.get("onboardingEnabled") === "on",
           leave_approval_steps: Number(values.get("leaveApprovalSteps")),
           mileage_reminder_days: mileageDays,
           mileage_overdue_day: Number(values.get("mileageOverdueDay")),
@@ -633,14 +631,6 @@ export function AdminSettings() {
               defaultValue={data.message_edit_window_minutes}
               required
             />
-          </label>
-          <label className="full">
-            <input
-              type="checkbox"
-              name="onboardingEnabled"
-              defaultChecked={data.onboarding_enabled}
-            />{" "}
-            Onboarding-Feature vorbereitend aktivieren
           </label>
           {save.error && (
             <div className="alert error full">

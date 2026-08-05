@@ -25,6 +25,11 @@ const Dashboard = lazy(() =>
     default: m.Dashboard,
   })),
 );
+const Onboarding = lazy(() =>
+  import("../features/onboarding/Onboarding").then((m) => ({
+    default: m.Onboarding,
+  })),
+);
 
 const ConversationList = lazy(() =>
   import("../features/messaging/Messaging").then((m) => ({
@@ -174,6 +179,7 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
+      { path: "/onboarding", element: page(<Onboarding />) },
       {
         path: "/app",
         element: <AppShell />,

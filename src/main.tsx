@@ -29,6 +29,7 @@ import "./styles/mobile-fixes.css";
 import "./styles/auth-brand.css";
 import "./styles/native-ready.css";
 import "./styles/premium-features.css";
+import "./styles/onboarding.css";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 });

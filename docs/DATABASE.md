@@ -85,6 +85,7 @@ Die fachlich maßgeblichen Migrationsquellen bleiben:
 18. `20260805075000_harden_storage_and_default_privileges.sql` – referenzsicherer Storage-Cleanup und minimale Data-API-Standardrechte
 19. `20260805075500_harden_workflow_rpc_invariants.sql` – Invite-, Rollen- und Workflow-Invarianten an der Datenbankgrenze
 20. `20260805082500_restore_authenticated_data_api_grants.sql` – explizite, sichere Data-API-Rechte auch auf vollständig frischen Projekten
+21. `20260805115714_exclusive_admin_onboarding.sql` – einmaliges, serverseitig exklusiv auf `info@alberring.de` begrenztes Admin-Onboarding
 
 `SETUP_FRESH.sql` und `SETUP_UPGRADE_20260710.sql` sind die bequemen Installationsbundles für den SQL Editor. Sie werden mit `npm run supabase:build:setup` vollständig aus den versionierten Migrationen und `seed.sql` erzeugt. Die Einzelmigrationen bleiben die maßgebliche Quelle.
 
@@ -170,7 +171,7 @@ Einladungs- und Recovery-Mails laufen über Supabase Auth und benötigen für au
 
 ## Tests und aktueller Nachweis
 
-Die fünf Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 175 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten, 34 für Data-API-Rechte sowie 8 für den Automations-Scheduler. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
+Die sechs Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 202 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten, 34 für Data-API-Rechte, 8 für den Automations-Scheduler sowie 27 für die exklusive Onboarding-Autorisierung und deren transaktionale Einstellungen. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
 
 Ausführung mit lokaler Supabase CLI und Docker:
 
@@ -179,4 +180,4 @@ npx supabase db reset
 npx supabase test db
 ```
 
-Am 05.08.2026 bestanden alle 141 Assertions direkt gegen das verknüpfte Supabase-Projekt innerhalb vollständig zurückgerollter Testtransaktionen; `db lint` meldete für `public` und `private` keine Schemafehler. CI startet zusätzlich eine frische lokale Supabase-Datenbank, wendet alle Migrationen an und führt Lint plus pgTAP erneut aus.
+Am 05.08.2026 bestanden alle 202 Assertions direkt gegen das verknüpfte Supabase-Projekt innerhalb vollständig zurückgerollter Testtransaktionen; `db lint` meldete für `public` und `private` keine Schemafehler. CI startet zusätzlich eine frische lokale Supabase-Datenbank, wendet alle Migrationen an und führt Lint plus pgTAP erneut aus.

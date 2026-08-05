@@ -27,6 +27,10 @@ export function ProtectedRoute() {
         </button>
       </main>
     );
+  if (appSession.onboarding.required && loc.pathname !== "/onboarding")
+    return <Navigate to="/onboarding" replace />;
+  if (!appSession.onboarding.required && loc.pathname === "/onboarding")
+    return <Navigate to="/app/dashboard" replace />;
   return <Outlet />;
 }
 export function PermissionRoute({ permission }: { permission: string }) {

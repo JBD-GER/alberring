@@ -43,6 +43,15 @@ test("es gibt keine öffentliche Registrierung", async ({ page }) => {
     page.getByRole("heading", { name: "Willkommen zurück" }),
   ).toBeVisible();
 });
+test("Onboarding ist ohne exklusive Admin-Sitzung nicht erreichbar", async ({
+  page,
+}) => {
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/login/);
+  await expect(
+    page.getByRole("heading", { name: "Willkommen zurück" }),
+  ).toBeVisible();
+});
 test("Login hat keine automatisiert erkennbaren WCAG-Verstöße", async ({
   page,
 }) => {

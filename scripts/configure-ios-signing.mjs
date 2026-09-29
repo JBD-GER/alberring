@@ -1,17 +1,24 @@
-const fs = require("node:fs");
-const xcode = require("xcode");
+import fs from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import xcode from "xcode";
 
-function configureSigning(path, team, profile) {
+export function configureSigning(path, team, profile) {
   if (!/^[A-Z0-9]{10}$/.test(team || "") || !profile) {
-    throw new Error("The Apple team and provisioning profile must be configured.");
+    throw new Error(
+      "The Apple team and provisioning profile must be configured.",
+    );
   }
   const project = xcode.project(path);
   project.parseSync();
-  const configurations = Object.values(project.pbxXCBuildConfigurationSection());
+  const configurations = Object.values(
+    project.pbxXCBuildConfigurationSection(),
+  );
   const application = configurations.filter(
     (config) =>
       config.name === "Release" &&
-      config.buildSettings?.PRODUCT_BUNDLE_IDENTIFIER === "de.alberring.connect",
+      config.buildSettings?.PRODUCT_BUNDLE_IDENTIFIER ===
+        "de.alberring.connect",
   );
   if (application.length !== 1) {
     throw new Error("Expected exactly one Alberring Release target.");
@@ -25,8 +32,10 @@ function configureSigning(path, team, profile) {
   fs.writeFileSync(path, project.writeSync());
 }
 
-module.exports = { configureSigning };
-if (require.main === module) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === resolve(process.argv[1])
+) {
   configureSigning(
     "ios/App/App.xcodeproj/project.pbxproj",
     process.env.APPLE_TEAM_ID,

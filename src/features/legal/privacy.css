@@ -1,0 +1,79 @@
+.app-privacy {
+  width: min(840px, 100%);
+  margin: 0 auto;
+  padding: max(32px, env(safe-area-inset-top)) 24px
+    max(40px, env(safe-area-inset-bottom));
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.app-privacy header {
+  margin-bottom: 40px;
+}
+.privacy-brand {
+  display: inline-block;
+  margin-bottom: 28px;
+}
+.privacy-brand img {
+  width: 205px;
+  max-width: 100%;
+  height: auto;
+}
+.app-privacy h1 {
+  font-size: clamp(2rem, 6vw, 2.8rem);
+  line-height: 1.15;
+}
+.privacy-intro {
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+.app-privacy section {
+  margin: 32px 0;
+}
+.app-privacy h2 {
+  font-size: 1.35rem;
+  line-height: 1.4;
+}
+.app-privacy h3 {
+  font-size: 1.08rem;
+  margin-top: 24px;
+}
+.app-privacy address {
+  font-style: normal;
+  margin-bottom: 16px;
+}
+.app-privacy a {
+  color: var(--primary-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.app-privacy li {
+  margin-bottom: 12px;
+}
+.app-privacy ul {
+  padding-left: 22px;
+}
+.app-privacy footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 24px;
+}
+.app-privacy a:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 4px;
+}
+.auth-card .privacy-note a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media print {
+  .app-privacy {
+    width: auto;
+    padding: 0;
+    color: #000;
+  }
+  .app-privacy section {
+    break-inside: avoid;
+  }
+}

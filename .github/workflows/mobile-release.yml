@@ -7,7 +7,7 @@ on:
       - ".github/workflows/mobile-release.yml"
       - "scripts/prepare-release-secrets.py"
       - "scripts/upload-ios.py"
-      - "scripts/configure-ios-signing.cjs"
+      - "scripts/configure-ios-signing.mjs"
       - "package-lock.json"
   workflow_dispatch:
     inputs:
@@ -124,7 +124,7 @@ jobs:
         run: python3 scripts/prepare-release-secrets.py ios
       - name: Archive and export App Store package
         run: |
-          node scripts/configure-ios-signing.cjs
+          node scripts/configure-ios-signing.mjs
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Alberring.xcarchive" archive
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Alberring.xcarchive" \

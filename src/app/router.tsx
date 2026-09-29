@@ -6,6 +6,7 @@ import { ProtectedRoute, RequirePermission } from "./ProtectedRoute";
 const Login = lazy(() =>
   import("../features/auth/AuthScreens").then((m) => ({ default: m.Login })),
 );
+const Privacy = lazy(() => import("../features/legal/Privacy"));
 const ForgotPassword = lazy(() =>
   import("../features/auth/AuthScreens").then((m) => ({
     default: m.ForgotPassword,
@@ -167,19 +168,8 @@ export const router = createBrowserRouter([
       { path: "/forgot-password", element: page(<ForgotPassword />) },
       { path: "/reset-password", element: page(<ResetPassword />) },
       { path: "/accept-invite", element: page(<AcceptInvite />) },
-      {
-        path: "/privacy",
-        element: (
-          <main className="legal">
-            <h1>Datenschutz</h1>
-            <p>
-              Diese interne Anwendung verarbeitet ausschließlich
-              betriebsnotwendige Mitarbeiterdaten. Die verbindlichen
-              Betreiberinformationen werden vor Produktivbetrieb ergänzt.
-            </p>
-          </main>
-        ),
-      },
+      { path: "/datenschutz", element: page(<Privacy />) },
+      { path: "/privacy", element: <Navigate to="/datenschutz" replace /> },
       {
         element: <ProtectedRoute />,
         children: [

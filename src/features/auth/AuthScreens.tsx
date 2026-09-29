@@ -78,7 +78,7 @@ function AuthFrame({
         {children}
         <p className="privacy-note">
           Nur für Mitarbeitende. Ihre Daten werden zweckgebunden und geschützt
-          verarbeitet.
+          verarbeitet. <Link to="/datenschutz">Datenschutzerklärung</Link>
         </p>
       </section>
     </main>

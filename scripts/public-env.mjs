@@ -7,6 +7,25 @@ export function validatePublicEnvironment(env, { native = false } = {}) {
     "VITE_PUSH_ENABLED",
     "VITE_PUSH_ENVIRONMENT",
   ]);
+  // Vercel injects these public deployment details into web builds. Keep an
+  // explicit list so credentials with a similar prefix still fail validation.
+  if (!native) {
+    for (const name of [
+      "VITE_VERCEL_GIT_REPO_ID",
+      "VITE_VERCEL_ENV",
+      "VITE_VERCEL_GIT_PULL_REQUEST_ID",
+      "VITE_VERCEL_OBSERVABILITY_CLIENT_CONFIG",
+      "VITE_VERCEL_BRANCH_URL",
+      "VITE_VERCEL_GIT_COMMIT_SHA",
+      "VITE_VERCEL_URL",
+      "VITE_VERCEL_GIT_COMMIT_AUTHOR_NAME",
+      "VITE_VERCEL_GIT_PREVIOUS_SHA",
+      "VITE_VERCEL_PROJECT_ID",
+      "VITE_VERCEL_PROJECT_PRODUCTION_URL",
+      "VITE_VERCEL_DEPLOYMENT_ID",
+    ])
+      allowed.add(name);
+  }
   for (const name of Object.keys(env)) {
     if (name.startsWith("VITE_") && !allowed.has(name))
       errors.push(`Unapproved client variable: ${name}`);

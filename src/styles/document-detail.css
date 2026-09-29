@@ -44,11 +44,21 @@
   font-size: 0.8rem;
   font-weight: 700;
 }
-.document-version-upload > label > input {
+.document-version-upload > label > input:not([type="checkbox"]) {
   min-height: 44px;
   border: 1px solid #cbd7d7;
   border-radius: 10px;
   padding: 0 12px;
+}
+.document-version-upload > label.check {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+.document-version-upload > label.check > input {
+  width: 18px;
+  height: 18px;
+  flex: none;
 }
 @media (max-width: 620px) {
   .version-list article {

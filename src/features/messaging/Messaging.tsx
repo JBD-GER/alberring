@@ -28,12 +28,23 @@ import { format, isToday, isYesterday } from "date-fns";
 import { de } from "date-fns/locale";
 import { supabase } from "../../lib/supabase";
 import { fileAllowed } from "../../lib/validation";
+import {
+  AudioPreview,
+  ChatDeviceActions,
+} from "../../components/common/DeviceActions";
+import { messageMimeTypes } from "../../services/platform/audio";
+import { uploadPrivateFile } from "../../services/platform/uploads";
+import { UploadProgress } from "../../components/common/UploadProgress";
 import { useAuth } from "../auth/AuthProvider";
 
 type Conversation = {
   id: string;
   type: "direct" | "group" | "team" | "announcement";
   name: string | null;
+  avatar_path?: string | null;
+  created_by?: string;
+  team_id?: string | null;
+  can_manage?: boolean;
   created_at: string;
   updated_at?: string;
   unread_count?: number;
@@ -79,6 +90,35 @@ type Message = {
 };
 type MessageWithoutReply = Omit<Message, "reply">;
 type ReplyMessage = NonNullable<Message["reply"]>;
+type ConversationPerson = {
+  id: string;
+  display_name: string;
+  teams: Array<{ id: string; name: string }>;
+};
+const avatarMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const actionErrorMessage = (error: unknown, fallback: string) => {
+  if (
+    !error ||
+    typeof error !== "object" ||
+    !("message" in error) ||
+    typeof error.message !== "string"
+  )
+    return fallback;
+  const messages: Record<string, string> = {
+    permission_denied:
+      "Sie können diesen Chat nicht mehr verwalten. Bitte öffnen Sie die Chatdetails erneut.",
+    conversation_manager_required:
+      "Die verwaltende Person muss Mitglied des Chats bleiben.",
+    conversation_requires_members: "Bitte mindestens ein Mitglied auswählen.",
+    member_not_available:
+      "Eine ausgewählte Person ist nicht mehr verfügbar. Bitte öffnen Sie die Chatdetails erneut.",
+    invalid_member_selection:
+      "Die Auswahl konnte nicht gespeichert werden. Bitte wählen Sie die Mitglieder erneut aus.",
+    avatar_not_available:
+      "Das Gruppenbild ist nicht verfügbar. Bitte laden Sie es erneut hoch.",
+  };
+  return messages[error.message] ?? fallback;
+};
 const conversationTitle = (c: Conversation, me?: string) =>
   c.type === "direct"
     ? (c.conversation_members.find((m) => m.profile_id !== me)?.profiles
@@ -458,15 +498,26 @@ export function Chat() {
   const { appSession, has } = useAuth();
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+  }, [body]);
   const [file, setFile] = useState<File | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [reactionFor, setReactionFor] = useState<string | null>(null);
   const [messageSearch, setMessageSearch] = useState("");
   const [chatListSearch, setChatListSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [messageLimit, setMessageLimit] = useState(100);
   const [downloadError, setDownloadError] = useState("");
   const [fileError, setFileError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), [conversationId]);
   const [currentTime, setCurrentTime] = useState(Date.now);
   const endRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -483,11 +534,11 @@ export function Chat() {
       clearSelectedFile();
       return;
     }
-    if (
-      !fileAllowed(nextFile, ["image/jpeg", "image/png", "application/pdf"], 10)
-    ) {
+    if (!fileAllowed(nextFile, messageMimeTypes, 10)) {
       clearSelectedFile();
-      setFileError("Erlaubt sind PDF, JPG und PNG bis 10 MB.");
+      setFileError(
+        "Erlaubt sind PDF, JPG, PNG und Audio (M4A, AAC, WebM, Ogg) bis 10 MB.",
+      );
       return;
     }
     setFile(nextFile);
@@ -503,13 +554,18 @@ export function Chat() {
       return data.message_edit_window_minutes;
     },
   });
-  const { data: conversation, isLoading: conversationLoading } = useQuery({
+  const {
+    data: conversation,
+    isLoading: conversationLoading,
+    error: conversationError,
+    refetch: refetchConversation,
+  } = useQuery({
     queryKey: ["conversation", conversationId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("conversations")
         .select(
-          "id,type,name,created_at,conversation_members(profile_id,profiles(display_name))",
+          "id,type,name,avatar_path,created_by,team_id,created_at,conversation_members(profile_id,profiles(display_name))",
         )
         .eq("id", conversationId!)
         .single();
@@ -588,6 +644,42 @@ export function Chat() {
     if (!conversationId) return;
     const channel = supabase
       .channel(`conversation:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversations",
+          filter: `id=eq.${conversationId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({
+            queryKey: ["conversation", conversationId],
+          });
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversation_members",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({
+            queryKey: ["conversation", conversationId],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["conversation-management", conversationId],
+          });
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          void queryClient.invalidateQueries({
+            queryKey: ["messages", conversationId],
+          });
+        },
+      )
       .on(
         "postgres_changes",
         {
@@ -693,13 +785,12 @@ export function Chat() {
   const send = useMutation({
     mutationFn: async () => {
       if (!appSession || !conversationId) throw new Error("Sitzung fehlt");
-      if (
-        file &&
-        !fileAllowed(file, ["image/jpeg", "image/png", "application/pdf"], 10)
-      )
-        throw new Error("Erlaubt sind PDF, JPG und PNG bis 10 MB.");
+      if (file && !fileAllowed(file, messageMimeTypes, 10))
+        throw new Error("Erlaubt sind PDF, JPG, PNG und Audio bis 10 MB.");
       const text = body.trim() || (file ? "Anhang" : "");
       if (!text) throw new Error("Nachricht fehlt.");
+      const controller = new AbortController();
+      uploadController.current = controller;
       const { data: messageId, error } = await supabase.rpc("send_message", {
         p_conversation_id: conversationId,
         p_body: text,
@@ -715,10 +806,16 @@ export function Chat() {
             ?.toLowerCase()
             .replace(/[^a-z0-9]/g, "") || "bin";
         const path = `${appSession.profile.organization_id}/${conversationId}/${messageId}/${crypto.randomUUID()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from("message-attachments")
-          .upload(path, file, { contentType: file.type });
-        if (uploadError) {
+        try {
+          await uploadPrivateFile(
+            "message-attachments",
+            path,
+            file,
+            setUploadProgress,
+            controller.signal,
+          );
+        } catch (uploadError) {
+          await supabase.storage.from("message-attachments").remove([path]);
           await supabase.rpc("retract_message", {
             p_message_id: messageId,
             p_reason: "Anhang konnte nicht gespeichert werden",
@@ -757,6 +854,10 @@ export function Chat() {
         queryKey: ["messages", conversationId],
       });
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+    onSettled: () => {
+      uploadController.current = null;
+      setUploadProgress(null);
     },
   });
   const react = useMutation({
@@ -891,6 +992,13 @@ export function Chat() {
         <ConversationSkeleton />
       </section>
     );
+  if (conversationError)
+    return (
+      <ErrorState
+        error={conversationError}
+        onRetry={() => void refetchConversation()}
+      />
+    );
   return (
     <section
       className={`chat messaging-chat messaging-chat-${conversation?.type ?? "direct"}`}
@@ -944,11 +1052,26 @@ export function Chat() {
           >
             <ArrowLeft />
           </Link>
-          <ConversationAvatar
-            conversation={conversation}
-            me={appSession?.profile.id}
-            className="chat-contact-avatar"
-          />
+          {conversation && conversation.type !== "direct" ? (
+            <button
+              type="button"
+              className="chat-avatar-toggle"
+              aria-label="Gruppenbild und Chatdetails öffnen"
+              onClick={() => setDetailsOpen(true)}
+            >
+              <ConversationAvatar
+                conversation={conversation}
+                me={appSession?.profile.id}
+                className="chat-contact-avatar"
+              />
+            </button>
+          ) : (
+            <ConversationAvatar
+              conversation={conversation}
+              me={appSession?.profile.id}
+              className="chat-contact-avatar"
+            />
+          )}
           <div className="chat-contact">
             <h2>
               {conversation
@@ -963,6 +1086,18 @@ export function Chat() {
                 : "Interner Chat"}
             </p>
           </div>
+          {conversation && conversation.type !== "direct" && (
+            <button
+              className="icon-button chat-details-toggle"
+              type="button"
+              aria-label="Chatdetails und Mitglieder öffnen"
+              title="Chatdetails und Mitglieder"
+              aria-expanded={detailsOpen}
+              onClick={() => setDetailsOpen(true)}
+            >
+              <Users />
+            </button>
+          )}
           <button
             className="icon-button chat-search-toggle"
             type="button"
@@ -1124,6 +1259,8 @@ export function Chat() {
                                 attachment={a}
                                 onOpen={() => void download(a)}
                               />
+                            ) : a.mime_type.startsWith("audio/") ? (
+                              <MessageAudio key={a.id} attachment={a} />
                             ) : (
                               <button
                                 type="button"
@@ -1397,6 +1534,23 @@ export function Chat() {
             accept="application/pdf,image/jpeg,image/png"
             onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
           />
+          {file?.type.startsWith("audio/") && <AudioPreview file={file} />}
+          <ChatDeviceActions
+            key={conversationId}
+            onFile={selectFile}
+            onLocation={(text) =>
+              setBody((current) =>
+                `${current}${current ? "\n" : ""}${text}`.slice(0, 10000),
+              )
+            }
+            disabled={send.isPending}
+          />
+          {uploadProgress !== null && (
+            <UploadProgress
+              percent={uploadProgress}
+              onCancel={() => uploadController.current?.abort()}
+            />
+          )}
           <button
             type="button"
             className="icon-button attachment-button"
@@ -1406,6 +1560,7 @@ export function Chat() {
             <Paperclip />
           </button>
           <textarea
+            ref={composerInputRef}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onInput={(event) => {
@@ -1449,7 +1604,506 @@ export function Chat() {
           )}
         </form>
       </div>
+      {detailsOpen && conversation && conversation.type !== "direct" && (
+        <ConversationDetails
+          key={conversation.id}
+          conversation={conversation}
+          onClose={() => setDetailsOpen(false)}
+        />
+      )}
     </section>
+  );
+}
+function ConversationDetails({
+  conversation,
+  onClose,
+}: {
+  conversation: Conversation;
+  onClose: () => void;
+}) {
+  const { appSession } = useAuth();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState("");
+  const [avatarNotice, setAvatarNotice] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberDraft, setMemberDraft] = useState<string[] | null>(null);
+  const [membersSaved, setMembersSaved] = useState(false);
+  const {
+    data: canManage = false,
+    isLoading: permissionsLoading,
+    error: permissionError,
+  } = useQuery({
+    queryKey: ["conversation-management", conversation.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("can_manage_conversation", {
+        p_conversation_id: conversation.id,
+      });
+      if (error) throw error;
+      return Boolean(data);
+    },
+  });
+  const {
+    data: people = [],
+    isLoading: peopleLoading,
+    error: peopleError,
+    refetch: refetchPeople,
+  } = useQuery({
+    queryKey: ["conversation-people"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("list_directory_entries", {
+        p_search: null,
+      });
+      if (error) throw error;
+      return data as ConversationPerson[];
+    },
+    enabled: canManage,
+  });
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
+  const clearAvatarDraft = () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setPreviewUrl(null);
+    setAvatarFile(null);
+    setAvatarError("");
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
+  const refreshConversation = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["conversation", conversation.id],
+      }),
+      queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+      queryClient.invalidateQueries({
+        queryKey: ["conversation-management", conversation.id],
+      }),
+    ]);
+  };
+  const saveAvatar = useMutation({
+    mutationFn: async (image: File | null) => {
+      if (!appSession || !canManage)
+        throw new Error("Keine Berechtigung zum Ändern des Gruppenbilds.");
+      if (image && !fileAllowed(image, avatarMimeTypes, 5))
+        throw new Error("Erlaubt sind JPG, PNG, WebP und GIF bis 5 MB.");
+      let nextPath: string | null = null;
+      if (image) {
+        const extension = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
+          "image/gif": "gif",
+        }[image.type];
+        nextPath = `${appSession.profile.organization_id}/${conversation.id}/${crypto.randomUUID()}.${extension}`;
+        const { error } = await supabase.storage
+          .from("conversation-avatars")
+          .upload(nextPath, image, {
+            contentType: image.type,
+            upsert: false,
+          });
+        if (error) throw error;
+      }
+      const { error } = await supabase.rpc("set_conversation_avatar", {
+        p_conversation_id: conversation.id,
+        p_storage_path: nextPath,
+      });
+      if (error) {
+        if (nextPath)
+          await supabase.storage
+            .from("conversation-avatars")
+            .remove([nextPath]);
+        throw error;
+      }
+      const previousPath = conversation.avatar_path;
+      if (previousPath && previousPath !== nextPath)
+        await supabase.storage
+          .from("conversation-avatars")
+          .remove([previousPath]);
+      return nextPath;
+    },
+    onSuccess: async (nextPath) => {
+      clearAvatarDraft();
+      setAvatarNotice(
+        nextPath ? "Gruppenbild gespeichert." : "Gruppenbild entfernt.",
+      );
+      await refreshConversation();
+    },
+  });
+  const currentMemberIds = conversation.conversation_members.map(
+    (member) => member.profile_id,
+  );
+  const selectedIds = memberDraft ?? currentMemberIds;
+  const saveMembers = useMutation({
+    mutationFn: async (memberIds: string[]) => {
+      const { error } = await supabase.rpc("set_conversation_members", {
+        p_conversation_id: conversation.id,
+        p_member_ids: memberIds,
+      });
+      if (error) throw error;
+      return memberIds;
+    },
+    onSuccess: async (memberIds) => {
+      if (appSession && !memberIds.includes(appSession.profile.id)) {
+        await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        onClose();
+        navigate("/app/messages");
+        return;
+      }
+      await refreshConversation();
+      setMemberDraft(null);
+      setMembersSaved(true);
+    },
+  });
+  const busy = saveAvatar.isPending || saveMembers.isPending;
+  const memberOptions = new Map<string, { id: string; display_name: string }>();
+  for (const member of conversation.conversation_members) {
+    memberOptions.set(member.profile_id, {
+      id: member.profile_id,
+      display_name: member.profiles?.display_name ?? "Mitarbeitende",
+    });
+  }
+  if (canManage)
+    for (const person of people) memberOptions.set(person.id, person);
+  const matchingPeople = [...memberOptions.values()]
+    .sort(
+      (a, b) =>
+        Number(currentMemberIds.includes(b.id)) -
+          Number(currentMemberIds.includes(a.id)) ||
+        a.display_name.localeCompare(b.display_name, "de"),
+    )
+    .filter((person) =>
+      person.display_name
+        .toLocaleLowerCase("de")
+        .includes(memberSearch.trim().toLocaleLowerCase("de")),
+    );
+  const membershipChanged =
+    selectedIds.length !== currentMemberIds.length ||
+    currentMemberIds.some((id) => !selectedIds.includes(id));
+  const addedCount = selectedIds.filter(
+    (id) => !currentMemberIds.includes(id),
+  ).length;
+  const removedCount = currentMemberIds.filter(
+    (id) => !selectedIds.includes(id),
+  ).length;
+  return (
+    <dialog
+      ref={dialogRef}
+      className="messaging-group-editor conversation-details"
+      aria-labelledby="conversation-details-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">CHATDETAILS</span>
+          <h2 id="conversation-details-title">
+            {conversation.name ?? "Unterhaltung"}
+          </h2>
+          <p>
+            {conversationLabel(conversation)} · {currentMemberIds.length}{" "}
+            Mitglieder
+          </p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          aria-label="Chatdetails schließen"
+        >
+          <X />
+        </button>
+      </div>
+      <section
+        className="conversation-avatar-editor"
+        aria-labelledby="group-avatar-title"
+      >
+        <div className="conversation-avatar-preview">
+          {previewUrl ? (
+            <img
+              src={previewUrl}
+              alt="Vorschau des neuen Gruppenbilds"
+              onError={() =>
+                setAvatarError(
+                  "Das Bild kann nicht angezeigt werden. Bitte wählen Sie ein anderes Bild.",
+                )
+              }
+            />
+          ) : (
+            <ConversationAvatar
+              conversation={conversation}
+              className="conversation-avatar-large"
+            />
+          )}
+        </div>
+        <div className="conversation-avatar-controls">
+          <h3 id="group-avatar-title">Gruppenbild</h3>
+          <p>
+            {canManage
+              ? "JPG, PNG, WebP oder GIF · bis 5 MB"
+              : "Das Bild erscheint in der Chatliste und im Chat."}
+          </p>
+          {canManage && (
+            <>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                hidden
+                accept={avatarMimeTypes.join(",")}
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0];
+                  if (!nextFile) return;
+                  clearAvatarDraft();
+                  saveAvatar.reset();
+                  setAvatarNotice("");
+                  if (!fileAllowed(nextFile, avatarMimeTypes, 5)) {
+                    setAvatarError(
+                      "Erlaubt sind JPG, PNG, WebP und GIF bis 5 MB.",
+                    );
+                    return;
+                  }
+                  const url = URL.createObjectURL(nextFile);
+                  previewUrlRef.current = url;
+                  setPreviewUrl(url);
+                  setAvatarFile(nextFile);
+                }}
+              />
+              <div className="conversation-details-actions">
+                <button
+                  type="button"
+                  className="secondary compact"
+                  disabled={busy}
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  <ImageIcon />{" "}
+                  {conversation.avatar_path || avatarFile
+                    ? "Bild ändern"
+                    : "Bild hinzufügen"}
+                </button>
+                {conversation.avatar_path && !avatarFile && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busy}
+                    onClick={() => {
+                      saveAvatar.reset();
+                      setAvatarNotice("");
+                      saveAvatar.mutate(null);
+                    }}
+                  >
+                    Bild entfernen
+                  </button>
+                )}
+              </div>
+              {avatarFile && (
+                <div className="conversation-details-actions">
+                  <button
+                    type="button"
+                    className="primary compact"
+                    disabled={busy || Boolean(avatarError)}
+                    onClick={() => saveAvatar.mutate(avatarFile)}
+                  >
+                    {saveAvatar.isPending
+                      ? "Wird gespeichert …"
+                      : "Bild speichern"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    disabled={busy}
+                    onClick={clearAvatarDraft}
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {(avatarError || saveAvatar.error) && (
+          <p className="alert error conversation-details-notice" role="alert">
+            {avatarError ||
+              actionErrorMessage(
+                saveAvatar.error,
+                "Gruppenbild konnte nicht gespeichert werden.",
+              )}
+          </p>
+        )}
+        {avatarNotice && (
+          <p className="conversation-details-notice" role="status">
+            {avatarNotice}
+          </p>
+        )}
+      </section>
+      <section
+        className="conversation-members-editor"
+        aria-labelledby="chat-members-title"
+      >
+        <h3 id="chat-members-title">
+          Mitglieder{canManage ? " verwalten" : ""}
+        </h3>
+        <p>
+          {canManage
+            ? "Personen auswählen oder abwählen und die Änderungen speichern."
+            : permissionsLoading
+              ? "Berechtigungen werden geladen …"
+              : "Die Chatverwaltung kann Mitglieder und das Gruppenbild ändern."}
+        </p>
+        {conversation.type === "team" && canManage && (
+          <p>
+            Änderungen gelten nur für diesen Chat. Auch Vertretungen aus anderen
+            Teams können teilnehmen.
+          </p>
+        )}
+        <label className="search conversation-member-search">
+          <Search />
+          <input
+            value={memberSearch}
+            onChange={(event) => setMemberSearch(event.target.value)}
+            placeholder="Mitarbeitende suchen"
+            aria-label="Chatmitglieder durchsuchen"
+          />
+        </label>
+        {peopleError && (
+          <div className="alert error" role="alert">
+            Die Mitarbeitenden konnten nicht geladen werden.{" "}
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => void refetchPeople()}
+            >
+              Erneut laden
+            </button>
+          </div>
+        )}
+        {permissionError && (
+          <p className="alert error" role="alert">
+            Die Verwaltungsberechtigung konnte nicht geladen werden. Öffnen Sie
+            die Chatdetails bitte erneut.
+          </p>
+        )}
+        {peopleLoading ? (
+          <p role="status">Mitarbeitende werden geladen …</p>
+        ) : (
+          <div className="conversation-member-options">
+            {matchingPeople.map((person) => {
+              const selected = selectedIds.includes(person.id);
+              const isOwnMembership = person.id === appSession?.profile.id;
+              return (
+                <label
+                  key={person.id}
+                  className={`conversation-member-option ${selected ? "selected" : ""}`}
+                >
+                  {canManage && (
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={busy || isOwnMembership || Boolean(peopleError)}
+                      onChange={() => {
+                        setMembersSaved(false);
+                        saveMembers.reset();
+                        setMemberDraft(
+                          selected
+                            ? selectedIds.filter((id) => id !== person.id)
+                            : [...selectedIds, person.id],
+                        );
+                      }}
+                    />
+                  )}
+                  <span className="avatar" aria-hidden="true">
+                    {person.display_name.slice(0, 2).toUpperCase()}
+                  </span>
+                  <span>
+                    <strong>
+                      {person.display_name}
+                      {person.id === appSession?.profile.id ? " (Sie)" : ""}
+                    </strong>
+                    <small>
+                      {isOwnMembership && canManage
+                        ? "Sie verwalten diesen Chat · bleiben Mitglied"
+                        : currentMemberIds.includes(person.id)
+                          ? selected
+                            ? "Mitglied"
+                            : "Wird entfernt"
+                          : selected
+                            ? "Wird hinzugefügt"
+                            : "Hinzufügen"}
+                    </small>
+                  </span>
+                </label>
+              );
+            })}
+            {matchingPeople.length === 0 && (
+              <p>Keine passenden Mitarbeitenden.</p>
+            )}
+          </div>
+        )}
+        {membershipChanged && (
+          <p className="conversation-details-notice" role="status">
+            {addedCount} hinzugefügt · {removedCount} entfernt nach dem
+            Speichern.
+          </p>
+        )}
+        {saveMembers.error && (
+          <p className="alert error" role="alert">
+            {actionErrorMessage(
+              saveMembers.error,
+              "Mitglieder konnten nicht gespeichert werden.",
+            )}
+          </p>
+        )}
+        {membersSaved && (
+          <p className="conversation-details-notice" role="status">
+            Mitglieder gespeichert.
+          </p>
+        )}
+        {canManage && (
+          <div className="conversation-details-actions member-save-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={
+                busy ||
+                !membershipChanged ||
+                peopleLoading ||
+                Boolean(peopleError)
+              }
+              onClick={() => saveMembers.mutate(selectedIds)}
+            >
+              {saveMembers.isPending
+                ? "Wird gespeichert …"
+                : "Mitglieder speichern"}
+            </button>
+            {membershipChanged && (
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setMemberDraft(null)}
+              >
+                Verwerfen
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    </dialog>
   );
 }
 function ConversationSkeleton() {
@@ -1502,12 +2156,29 @@ function ConversationAvatar({
   className?: string;
 }) {
   const title = conversation ? conversationTitle(conversation, me) : "";
+  const avatarPath = conversation?.avatar_path;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const { data: signedUrl } = useQuery({
+    queryKey: ["conversation-avatar", avatarPath],
+    queryFn: async () => {
+      const { data, error } = await supabase.storage
+        .from("conversation-avatars")
+        .createSignedUrl(avatarPath!, 60);
+      if (error) throw error;
+      return data.signedUrl;
+    },
+    enabled: Boolean(avatarPath),
+    staleTime: 45_000,
+    refetchInterval: avatarPath ? 45_000 : false,
+  });
   return (
     <span
       className={`avatar conversation-avatar conversation-avatar-${conversation?.type ?? "direct"} ${className}`}
       aria-hidden="true"
     >
-      {conversation?.type && conversation.type !== "direct" ? (
+      {signedUrl && failedUrl !== signedUrl ? (
+        <img src={signedUrl} alt="" onError={() => setFailedUrl(signedUrl)} />
+      ) : conversation?.type && conversation.type !== "direct" ? (
         <Users />
       ) : (
         title.slice(0, 2).toUpperCase() || "–"
@@ -1566,6 +2237,66 @@ function ConversationRow({
   );
 }
 
+function MessageAudio({ attachment }: { attachment: Attachment }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const load = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const { data, error: downloadError } = await supabase.functions.invoke(
+        "create-secure-download",
+        {
+          body: {
+            bucket: "message-attachments",
+            path: attachment.storage_path,
+          },
+        },
+      );
+      if (downloadError || !data?.signedUrl)
+        throw new Error("Audio konnte nicht geladen werden.");
+      setUrl(data.signedUrl);
+    } catch {
+      setError(
+        "Die Aufnahme konnte nicht geladen werden. Bitte erneut versuchen.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  return (
+    <div className="message-audio">
+      <strong>Sprachnachricht</strong>
+      <small>{formatBytes(attachment.size_bytes)}</small>
+      {url ? (
+        <audio
+          controls
+          preload="none"
+          src={url}
+          aria-label="Sprachnachricht abspielen"
+          onError={() => {
+            setUrl("");
+            setError(
+              "Die Wiedergabe ist fehlgeschlagen: Der Zugriff kann abgelaufen oder das Audioformat auf diesem Gerät nicht unterstützt sein. Bitte neu laden.",
+            );
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="secondary"
+          disabled={loading}
+          onClick={() => void load()}
+        >
+          {loading ? "Audio wird geladen …" : "Sprachnachricht laden"}
+        </button>
+      )}
+      {error && <span role="alert">{error}</span>}
+    </div>
+  );
+}
+
 function MessageImage({
   attachment,
   onOpen,
@@ -1573,7 +2304,12 @@ function MessageImage({
   attachment: Attachment;
   onOpen: () => void;
 }) {
-  const { data: signedUrl, isError } = useQuery({
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const {
+    data: signedUrl,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["message-image", attachment.storage_path],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke(
@@ -1595,16 +2331,29 @@ function MessageImage({
     <button
       type="button"
       className="message-image"
-      onClick={onOpen}
+      onClick={
+        failedUrl === signedUrl
+          ? () => {
+              void refetch().then(() => setFailedUrl(null));
+            }
+          : onOpen
+      }
       aria-label={`${attachment.original_name} sicher öffnen`}
     >
       <span className="message-image-frame">
-        {signedUrl ? (
-          <img src={signedUrl} alt={attachment.original_name} loading="lazy" />
+        {signedUrl && failedUrl !== signedUrl ? (
+          <img
+            src={signedUrl}
+            alt={attachment.original_name}
+            loading="lazy"
+            onError={() => setFailedUrl(signedUrl)}
+          />
         ) : (
           <span className="message-image-state">
             <ImageIcon />
-            {isError ? "Bild nicht verfügbar" : "Bild wird sicher geladen …"}
+            {isError || failedUrl === signedUrl
+              ? "Bild nicht verfügbar. Zum Wiederholen tippen."
+              : "Bild wird sicher geladen …"}
           </span>
         )}
         {signedUrl && (

@@ -312,6 +312,208 @@
 /* Tablet: keep the two-pane desktop experience until the app navigation
    switches to its mobile shell. */
 
+.conversation-avatar {
+  overflow: hidden;
+}
+
+.conversation-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.messaging-chat .chat-details-toggle {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  color: var(--message-accent-dark);
+}
+
+.messaging-chat .chat-details-toggle svg {
+  width: 20px;
+}
+
+.chat-avatar-toggle {
+  padding: 0;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+dialog.conversation-details {
+  --message-muted: #5d6c70;
+  --message-accent-dark: #006e72;
+  margin: auto;
+  color: var(--message-ink);
+}
+
+.conversation-details::backdrop {
+  background: rgba(23, 39, 42, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.conversation-details .section-heading p,
+.conversation-details section > p,
+.conversation-avatar-controls > p {
+  margin: 6px 0 12px;
+  color: var(--message-muted);
+  font-size: 0.77rem;
+  line-height: 1.5;
+}
+
+.conversation-details h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.conversation-avatar-editor {
+  margin-top: 24px;
+  padding-bottom: 22px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--message-line);
+}
+
+.conversation-avatar-preview,
+.conversation-avatar-preview > img,
+.conversation-avatar.conversation-avatar-large {
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.conversation-avatar-large svg {
+  width: 34px;
+  height: 34px;
+}
+
+.conversation-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conversation-details-actions .compact {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 0.74rem;
+}
+
+.conversation-details-actions svg {
+  width: 17px;
+  height: 17px;
+}
+
+.conversation-details .text-button {
+  min-height: 38px;
+  padding: 7px 5px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--message-accent-dark);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.conversation-details .text-button:hover {
+  background: var(--message-accent-soft);
+}
+
+.conversation-details .conversation-details-notice {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  color: var(--message-accent-dark);
+  font-size: 0.76rem;
+}
+
+.conversation-members-editor {
+  padding-top: 22px;
+}
+
+.conversation-member-search {
+  margin-bottom: 12px;
+}
+
+.conversation-member-options {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--message-line);
+  border-radius: 12px;
+}
+
+.conversation-member-option {
+  min-height: 60px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.conversation-member-option + .conversation-member-option {
+  border-top: 1px solid var(--message-line);
+}
+
+.conversation-member-option.selected {
+  background: #f4f9f9;
+}
+
+.conversation-member-option > input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  accent-color: var(--message-accent-dark);
+}
+
+.conversation-member-option .avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  background: var(--message-accent-soft);
+  color: var(--message-accent-dark);
+  font-size: 0.65rem;
+}
+
+.conversation-member-option > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.conversation-member-option strong {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.conversation-member-option small {
+  color: var(--message-muted);
+  font-size: 0.68rem;
+}
+
+.conversation-member-options > p {
+  padding: 12px;
+  font-size: 0.78rem;
+}
+
+.member-save-actions {
+  margin-top: 14px;
+}
+
+.conversation-details button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 @media (max-width: 1120px) and (min-width: 961px) {
   .messaging-chat {
     grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
@@ -416,7 +618,9 @@
   }
 
   .messaging-chat .chat-header.search-open .chat-contact-avatar,
-  .messaging-chat .chat-header.search-open .chat-contact {
+  .messaging-chat .chat-header.search-open .chat-avatar-toggle,
+  .messaging-chat .chat-header.search-open .chat-contact,
+  .messaging-chat .chat-header.search-open .chat-details-toggle {
     display: none;
   }
 

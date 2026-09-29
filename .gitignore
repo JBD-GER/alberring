@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-native
 playwright-report
 test-results
 coverage
@@ -9,5 +10,19 @@ coverage
 .DS_Store
 .supabase
 supabase/.temp
+supabase/.branches
 .vercel
 *.tsbuildinfo
+
+# Native build output and credentials (provided through protected CI secrets).
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+*.ipa
+*.xcarchive
+google-services.json
+GoogleService-Info.plist
+ios/App/CapApp-SPM/.build/
+mobile-artifacts/

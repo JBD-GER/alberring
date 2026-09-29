@@ -67,7 +67,8 @@ const more = [
     label: "Urlaub",
     icon: Umbrella,
     permission: [
-      "leave.create_own",
+      "leave.view_own",
+      "leave.create",
       "leave.view_team",
       "leave.approve",
       "leave.manage",
@@ -78,7 +79,8 @@ const more = [
     label: "Krankmeldung",
     icon: FileText,
     permission: [
-      "sick_leave.create_own",
+      "sick_leave.view_own",
+      "sick_leave.create",
       "sick_leave.view_status",
       "sick_leave.manage",
     ],

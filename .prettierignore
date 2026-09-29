@@ -1,0 +1,14 @@
+dist/
+dist-native/
+node_modules/
+android/
+ios/
+docs/screenshots/
+output/
+playwright-report/
+test-results/
+coverage/
+
+supabase/.temp/
+supabase/.branches/
+docs/Foerderungsdokumentation_Mobile_App.html

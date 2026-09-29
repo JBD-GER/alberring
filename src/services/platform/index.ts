@@ -20,12 +20,5 @@ export interface AppLifecycleService {
   subscribe(handler: (active: boolean) => void): () => void;
 }
 export const webFilePicker: FilePickerService = {
-  pick: (accept) =>
-    new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = accept.join(",");
-      input.onchange = () => resolve(input.files?.[0] ?? null);
-      input.click();
-    }),
+  pick: async (accept) => (await import("./media")).pickWebFile(accept),
 };

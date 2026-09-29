@@ -212,8 +212,35 @@ export function ErrorState({
 }
 
 export function humanizeError(error: unknown, fallback: string) {
-  if (!(error instanceof Error)) return fallback;
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("message" in error) ||
+    typeof error.message !== "string"
+  )
+    return fallback;
   const message = error.message.toLocaleLowerCase("de");
+  if (message.includes("self_approval_not_allowed")) {
+    return "Eigene Urlaubsanträge muss eine andere berechtigte Person bearbeiten.";
+  }
+  if (message.includes("second_approver_required")) {
+    return "Sie haben diesen Antrag bereits freigegeben. Für die zweite Freigabe ist eine andere berechtigte Person erforderlich.";
+  }
+  if (message.includes("request_not_decidable")) {
+    return "Dieser Urlaubsantrag ist nicht mehr offen. Laden Sie die Übersicht neu.";
+  }
+  if (message.includes("rejection_reason_required")) {
+    return "Bitte geben Sie einen Grund für die Ablehnung an.";
+  }
+  if (message.includes("assignee_not_available")) {
+    return "Die ausgewählte Person ist nicht mehr für eine Fahrzeugzuweisung verfügbar.";
+  }
+  if (
+    message.includes("license_plate") &&
+    (message.includes("duplicate") || message.includes("unique"))
+  ) {
+    return "Dieses Kennzeichen ist bereits im Fuhrpark vorhanden.";
+  }
   if (
     message.includes("overlap") ||
     message.includes("überschneid") ||

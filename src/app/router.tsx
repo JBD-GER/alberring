@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
+import { AppErrorScreen } from "../components/common/AppErrorBoundary";
 import { AppShell } from "./AppShell";
 import { ProtectedRoute, RequirePermission } from "./ProtectedRoute";
 const Login = lazy(() =>
@@ -158,177 +159,191 @@ const permitted = (permission: string | string[], node: ReactNode) =>
   page(<RequirePermission permission={permission}>{node}</RequirePermission>);
 
 export const router = createBrowserRouter([
-  { path: "/", element: <Navigate to="/app/dashboard" replace /> },
-  { path: "/login", element: page(<Login />) },
-  { path: "/forgot-password", element: page(<ForgotPassword />) },
-  { path: "/reset-password", element: page(<ResetPassword />) },
-  { path: "/accept-invite", element: page(<AcceptInvite />) },
   {
-    path: "/privacy",
-    element: (
-      <main className="legal">
-        <h1>Datenschutz</h1>
-        <p>
-          Diese interne Anwendung verarbeitet ausschließlich betriebsnotwendige
-          Mitarbeiterdaten. Die verbindlichen Betreiberinformationen werden vor
-          Produktivbetrieb ergänzt.
-        </p>
-      </main>
-    ),
-  },
-  {
-    element: <ProtectedRoute />,
+    errorElement: <AppErrorScreen />,
     children: [
-      { path: "/onboarding", element: page(<Onboarding />) },
+      { path: "/", element: <Navigate to="/app/dashboard" replace /> },
+      { path: "/login", element: page(<Login />) },
+      { path: "/forgot-password", element: page(<ForgotPassword />) },
+      { path: "/reset-password", element: page(<ResetPassword />) },
+      { path: "/accept-invite", element: page(<AcceptInvite />) },
       {
-        path: "/app",
-        element: <AppShell />,
+        path: "/privacy",
+        element: (
+          <main className="legal">
+            <h1>Datenschutz</h1>
+            <p>
+              Diese interne Anwendung verarbeitet ausschließlich
+              betriebsnotwendige Mitarbeiterdaten. Die verbindlichen
+              Betreiberinformationen werden vor Produktivbetrieb ergänzt.
+            </p>
+          </main>
+        ),
+      },
+      {
+        element: <ProtectedRoute />,
         children: [
-          { index: true, element: <Navigate to="dashboard" replace /> },
+          { path: "/onboarding", element: page(<Onboarding />) },
           {
-            path: "dashboard",
-            element: permitted("dashboard.view", <Dashboard />),
+            path: "/app",
+            element: <AppShell />,
+            children: [
+              { index: true, element: <Navigate to="dashboard" replace /> },
+              {
+                path: "dashboard",
+                element: permitted("dashboard.view", <Dashboard />),
+              },
+              {
+                path: "messages",
+                element: permitted("messages.use", <ConversationList />),
+              },
+              {
+                path: "messages/:conversationId",
+                element: permitted("messages.use", <Chat />),
+              },
+              { path: "news", element: permitted("news.view", <NewsFeed />) },
+              {
+                path: "news/:id",
+                element: permitted(
+                  ["news.view", "news.create", "news.manage"],
+                  <NewsDetail />,
+                ),
+              },
+              {
+                path: "schedule",
+                element: permitted(
+                  [
+                    "schedule.view_own",
+                    "schedule.view_team",
+                    "schedule.manage",
+                  ],
+                  <SchedulePage />,
+                ),
+              },
+              {
+                path: "leave",
+                element: permitted(
+                  [
+                    "leave.view_own",
+                    "leave.create",
+                    "leave.view_team",
+                    "leave.approve",
+                    "leave.manage",
+                  ],
+                  <LeavePage />,
+                ),
+              },
+              {
+                path: "sick-leave",
+                element: permitted(
+                  [
+                    "sick_leave.view_own",
+                    "sick_leave.create",
+                    "sick_leave.view_status",
+                    "sick_leave.manage",
+                  ],
+                  <SickLeavePage />,
+                ),
+              },
+              {
+                path: "documents",
+                element: permitted(
+                  [
+                    "documents.view_own",
+                    "documents.view_shared",
+                    "documents.manage",
+                  ],
+                  <Documents />,
+                ),
+              },
+              {
+                path: "documents/:id",
+                element: permitted(
+                  [
+                    "documents.view_own",
+                    "documents.view_shared",
+                    "documents.manage",
+                  ],
+                  <DocumentDetail />,
+                ),
+              },
+              {
+                path: "fleet",
+                element: permitted(
+                  ["fleet.view_own", "fleet.view_all", "fleet.manage"],
+                  <FleetPage />,
+                ),
+              },
+              {
+                path: "material-requests",
+                element: permitted(
+                  [
+                    "materials.create_own",
+                    "materials.view_team",
+                    "materials.approve",
+                    "materials.manage",
+                  ],
+                  <MaterialRequestsPage />,
+                ),
+              },
+              {
+                path: "directory",
+                element: permitted("directory.view", <Directory />),
+              },
+              { path: "notifications", element: page(<Notifications />) },
+              { path: "profile", element: page(<Profile />) },
+              { path: "settings", element: page(<SettingsPage />) },
+              { path: "more", element: page(<More />) },
+              { path: "admin", element: page(<AdminHome />) },
+              { path: "admin/users", element: page(<AdminUsers />) },
+              {
+                path: "admin/users/:userId",
+                element: page(<AdminUserDetail />),
+              },
+              { path: "admin/roles", element: page(<AdminRoles />) },
+              { path: "admin/teams", element: page(<AdminTeams />) },
+              {
+                path: "admin/news",
+                element: permitted("news.manage", <NewsFeed />),
+              },
+              {
+                path: "admin/documents",
+                element: permitted("documents.manage", <Documents />),
+              },
+              {
+                path: "admin/schedule",
+                element: permitted("schedule.manage", <ScheduleAdminPage />),
+              },
+              {
+                path: "admin/leave",
+                element: permitted(
+                  ["leave.approve", "leave.manage"],
+                  <LeaveAdminPage />,
+                ),
+              },
+              {
+                path: "admin/sick-leave",
+                element: permitted("sick_leave.manage", <SickLeaveAdminPage />),
+              },
+              {
+                path: "admin/fleet",
+                element: permitted("fleet.manage", <FleetAdminPage />),
+              },
+              {
+                path: "admin/material-requests",
+                element: permitted(
+                  ["materials.approve", "materials.manage"],
+                  <MaterialRequestsAdminPage />,
+                ),
+              },
+              { path: "admin/audit", element: page(<AuditLog />) },
+              { path: "admin/integrations", element: page(<Integrations />) },
+              { path: "admin/settings", element: page(<AdminSettings />) },
+            ],
           },
-          {
-            path: "messages",
-            element: permitted("messages.use", <ConversationList />),
-          },
-          {
-            path: "messages/:conversationId",
-            element: permitted("messages.use", <Chat />),
-          },
-          { path: "news", element: permitted("news.view", <NewsFeed />) },
-          {
-            path: "news/:id",
-            element: permitted(
-              ["news.view", "news.create", "news.manage"],
-              <NewsDetail />,
-            ),
-          },
-          {
-            path: "schedule",
-            element: permitted(
-              ["schedule.view_own", "schedule.view_team", "schedule.manage"],
-              <SchedulePage />,
-            ),
-          },
-          {
-            path: "leave",
-            element: permitted(
-              [
-                "leave.create_own",
-                "leave.view_team",
-                "leave.approve",
-                "leave.manage",
-              ],
-              <LeavePage />,
-            ),
-          },
-          {
-            path: "sick-leave",
-            element: permitted(
-              [
-                "sick_leave.create_own",
-                "sick_leave.view_status",
-                "sick_leave.manage",
-              ],
-              <SickLeavePage />,
-            ),
-          },
-          {
-            path: "documents",
-            element: permitted(
-              [
-                "documents.view_own",
-                "documents.view_shared",
-                "documents.manage",
-              ],
-              <Documents />,
-            ),
-          },
-          {
-            path: "documents/:id",
-            element: permitted(
-              [
-                "documents.view_own",
-                "documents.view_shared",
-                "documents.manage",
-              ],
-              <DocumentDetail />,
-            ),
-          },
-          {
-            path: "fleet",
-            element: permitted(
-              ["fleet.view_own", "fleet.view_all", "fleet.manage"],
-              <FleetPage />,
-            ),
-          },
-          {
-            path: "material-requests",
-            element: permitted(
-              [
-                "materials.create_own",
-                "materials.view_team",
-                "materials.approve",
-                "materials.manage",
-              ],
-              <MaterialRequestsPage />,
-            ),
-          },
-          {
-            path: "directory",
-            element: permitted("directory.view", <Directory />),
-          },
-          { path: "notifications", element: page(<Notifications />) },
-          { path: "profile", element: page(<Profile />) },
-          { path: "settings", element: page(<SettingsPage />) },
-          { path: "more", element: page(<More />) },
-          { path: "admin", element: page(<AdminHome />) },
-          { path: "admin/users", element: page(<AdminUsers />) },
-          { path: "admin/users/:userId", element: page(<AdminUserDetail />) },
-          { path: "admin/roles", element: page(<AdminRoles />) },
-          { path: "admin/teams", element: page(<AdminTeams />) },
-          {
-            path: "admin/news",
-            element: permitted("news.manage", <NewsFeed />),
-          },
-          {
-            path: "admin/documents",
-            element: permitted("documents.manage", <Documents />),
-          },
-          {
-            path: "admin/schedule",
-            element: permitted("schedule.manage", <ScheduleAdminPage />),
-          },
-          {
-            path: "admin/leave",
-            element: permitted(
-              ["leave.approve", "leave.manage"],
-              <LeaveAdminPage />,
-            ),
-          },
-          {
-            path: "admin/sick-leave",
-            element: permitted("sick_leave.manage", <SickLeaveAdminPage />),
-          },
-          {
-            path: "admin/fleet",
-            element: permitted("fleet.manage", <FleetAdminPage />),
-          },
-          {
-            path: "admin/material-requests",
-            element: permitted(
-              ["materials.approve", "materials.manage"],
-              <MaterialRequestsAdminPage />,
-            ),
-          },
-          { path: "admin/audit", element: page(<AuditLog />) },
-          { path: "admin/integrations", element: page(<Integrations />) },
-          { path: "admin/settings", element: page(<AdminSettings />) },
         ],
       },
+      { path: "*", element: <Navigate to="/app/dashboard" replace /> },
     ],
   },
-  { path: "*", element: <Navigate to="/app/dashboard" replace /> },
 ]);

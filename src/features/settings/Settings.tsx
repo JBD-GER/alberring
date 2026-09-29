@@ -18,6 +18,8 @@ import { Link } from "react-router";
 import { supabase } from "../../lib/supabase";
 import { passwordSchema } from "../../lib/validation";
 import { useAuth } from "../auth/AuthProvider";
+import { DevicePermissions } from "../../components/common/DevicePermissions";
+import { PushSettings } from "../../components/common/PushSettings";
 type ProfileData = {
   display_name: string;
   email: string;
@@ -225,6 +227,8 @@ export function Settings() {
         wurde.
       </div>
       <NotificationPreferences />
+      <DevicePermissions />
+      <PushSettings />
       <section className="settings-card danger-zone">
         <div className="settings-title">
           <User />
@@ -407,7 +411,8 @@ export function More() {
       description: "Anträge und Status",
       icon: Umbrella,
       permissions: [
-        "leave.create_own",
+        "leave.view_own",
+        "leave.create",
         "leave.view_team",
         "leave.approve",
         "leave.manage",
@@ -417,10 +422,11 @@ export function More() {
     {
       to: "/app/sick-leave",
       label: "Krankmeldung",
-      description: "Abwesenheit sicher melden",
+      description: "Abwesenheiten und Status",
       icon: FileText,
       permissions: [
-        "sick_leave.create_own",
+        "sick_leave.view_own",
+        "sick_leave.create",
         "sick_leave.view_status",
         "sick_leave.manage",
       ],

@@ -2,10 +2,23 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
+    {
+      name: "native-content-security-policy",
+      transformIndexHtml(html) {
+        if (mode !== "native") return html;
+        const policy =
+          "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: https://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'";
+        return html.replace(
+          "<head>",
+          `<head><meta http-equiv="Content-Security-Policy" content="${policy}" />`,
+        );
+      },
+    },
     VitePWA({
+      disable: mode === "native",
       registerType: "prompt",
       manifest: {
         name: "Alberring Mitarbeiter-App",
@@ -57,4 +70,4 @@ export default defineConfig({
       "node_modules/**",
     ],
   },
-});
+}));

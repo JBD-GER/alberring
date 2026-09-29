@@ -11,6 +11,7 @@ import {
   FileUp,
   LockKeyhole,
   Plus,
+  Pencil,
   ShieldCheck,
 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
@@ -29,6 +30,7 @@ import {
   WorkflowTabs,
   type StatusTone,
 } from "../../components/form/WorkflowUI";
+import { EmployeeSelect } from "../../components/form/EmployeeSelect";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 import "./sick-leave.css";
@@ -77,6 +79,7 @@ const certificateLabels: Record<string, string> = {
 
 const sickSchema = z
   .object({
+    profileId: z.uuid("Bitte eine Person auswählen."),
     startsOn: z.string().min(1, "Beginn fehlt."),
     expectedEndOn: z.string(),
     endUnknown: z.boolean(),
@@ -120,19 +123,21 @@ function extensionFor(file: File) {
 async function uploadCertificate({
   recordId,
   profileId,
+  ownerProfileId = profileId,
   organizationId,
   file,
   version,
 }: {
   recordId: string;
   profileId: string;
+  ownerProfileId?: string;
   organizationId: string;
   file: File;
   version: number;
 }) {
   validateCertificate(file);
   const versionId = crypto.randomUUID();
-  const path = `${organizationId}/${profileId}/${recordId}/${versionId}.${extensionFor(file)}`;
+  const path = `${organizationId}/${ownerProfileId}/${recordId}/${versionId}.${extensionFor(file)}`;
   const { error: uploadError } = await supabase.storage
     .from("sick-certificates")
     .upload(path, file, { contentType: file.type, upsert: false });
@@ -166,9 +171,11 @@ export function SickLeavePage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<SickTab>("mine");
   const [formOpen, setFormOpen] = useState(false);
+  const [correctionRecord, setCorrectionRecord] =
+    useState<SickLeaveRecord | null>(null);
   const [extensionRecord, setExtensionRecord] =
     useState<SickLeaveRecord | null>(null);
-  const canCreate = has("sick_leave.create_own");
+  const canCreate = has("sick_leave.create");
   const canSeeStatus =
     has("sick_leave.view_status") || has("sick_leave.manage");
   const canManage = has("sick_leave.manage");
@@ -227,7 +234,11 @@ export function SickLeavePage() {
       <WorkflowHeader
         eyebrow="Vertraulicher Bereich"
         title="Krankmeldung"
-        description="Arbeitsunfähigkeit ohne Diagnoseangabe melden. Atteste werden getrennt und privat archiviert."
+        description={
+          canCreate
+            ? "Krankmeldungen für Mitarbeitende ohne Diagnoseangabe erfassen."
+            : "Hier sehen Sie Ihre Krankmeldungen. Neue Meldungen erfasst Ihre Administration."
+        }
         action={
           canCreate ? (
             <button
@@ -258,6 +269,17 @@ export function SickLeavePage() {
           profileId={appSession.profile.id}
           organizationId={appSession.profile.organization_id}
           onClose={() => setFormOpen(false)}
+          onSaved={(profileId) => {
+            setFormOpen(false);
+            setTab(profileId === appSession.profile.id ? "mine" : "team");
+          }}
+        />
+      ) : null}
+      {correctionRecord && has("data.correct") ? (
+        <SickCorrectionForm
+          key={correctionRecord.id}
+          record={correctionRecord}
+          onClose={() => setCorrectionRecord(null)}
         />
       ) : null}
       {extensionRecord ? (
@@ -324,21 +346,33 @@ export function SickLeavePage() {
               (document) => document.sick_leave_id === record.id,
             );
             return (
-              <SickRecordCard
-                key={record.id}
-                record={record}
-                own={own}
-                certificates={certificates}
-                organizationId={appSession?.profile.organization_id ?? ""}
-                profileId={appSession?.profile.id ?? ""}
-                canViewCertificates={own || canViewCertificates}
-                canManage={canManage && !own}
-                onExtend={own ? () => setExtensionRecord(record) : undefined}
-                onStatus={(status) =>
-                  updateStatus.mutate({ id: record.id, status })
-                }
-                statusPending={updateStatus.isPending}
-              />
+              <div key={record.id} className="page-stack">
+                {has("data.correct") ? (
+                  <button
+                    type="button"
+                    className="wf-secondary"
+                    onClick={() => setCorrectionRecord(record)}
+                  >
+                    <Pencil size={16} /> Daten von{" "}
+                    {record.profiles?.display_name ?? "Mitarbeiter/in"}{" "}
+                    korrigieren
+                  </button>
+                ) : null}
+                <SickRecordCard
+                  record={record}
+                  own={own}
+                  certificates={certificates}
+                  organizationId={appSession?.profile.organization_id ?? ""}
+                  profileId={appSession?.profile.id ?? ""}
+                  canViewCertificates={own || canViewCertificates}
+                  canManage={canManage && !own}
+                  onExtend={own ? () => setExtensionRecord(record) : undefined}
+                  onStatus={(status) =>
+                    updateStatus.mutate({ id: record.id, status })
+                  }
+                  statusPending={updateStatus.isPending}
+                />
+              </div>
             );
           })}
         </div>
@@ -444,11 +478,14 @@ function SickReportForm({
   profileId,
   organizationId,
   onClose,
+  onSaved,
 }: {
   profileId: string;
   organizationId: string;
   onClose: () => void;
+  onSaved: (profileId: string) => void;
 }) {
+  const { has } = useAuth();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
@@ -461,6 +498,7 @@ function SickReportForm({
   } = useForm<SickFormValues>({
     resolver: zodResolver(sickSchema),
     defaultValues: {
+      profileId: "",
       startsOn: todayInputValue(),
       expectedEndOn: "",
       endUnknown: false,
@@ -469,26 +507,35 @@ function SickReportForm({
     },
   });
   const endUnknown = useWatch({ control, name: "endUnknown" });
+  const targetProfileId = useWatch({ control, name: "profileId" });
+  const canUpload =
+    Boolean(targetProfileId) &&
+    (targetProfileId === profileId || has("sick_leave.view_certificates"));
   const report = useMutation({
     mutationFn: async (values: SickFormValues) => {
-      if (file) validateCertificate(file);
-      const { data, error } = await supabase.rpc("report_sick_leave", {
+      const certificateFile = canUpload ? file : null;
+      if (certificateFile) validateCertificate(certificateFile);
+      const { data, error } = await supabase.rpc("report_sick_leave_for_user", {
+        p_profile_id: values.profileId,
         p_starts_on: values.startsOn,
         p_expected_end_on: values.endUnknown
           ? null
           : values.expectedEndOn || null,
         p_end_unknown: values.endUnknown,
-        p_certificate_status: file ? "pending" : values.certificatePlan,
+        p_certificate_status: certificateFile
+          ? "pending"
+          : values.certificatePlan,
       });
       if (error) throw error;
       const recordId = data as string;
-      if (file) {
+      if (certificateFile) {
         try {
           await uploadCertificate({
             recordId,
             profileId,
+            ownerProfileId: values.profileId,
             organizationId,
-            file,
+            file: certificateFile,
             version: 1,
           });
         } catch (uploadError) {
@@ -503,7 +550,7 @@ function SickReportForm({
       }
       return { recordId, warning: "" };
     },
-    onSuccess: async (result) => {
+    onSuccess: async (result, values) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["sick-leave-records"] }),
         queryClient.invalidateQueries({
@@ -511,7 +558,7 @@ function SickReportForm({
         }),
       ]);
       if (result.warning) setPartialSuccess(result.warning);
-      else onClose();
+      else onSaved(values.profileId);
     },
   });
   const selectFile = (next: File | null) => {
@@ -529,15 +576,27 @@ function SickReportForm({
   };
   return (
     <WorkflowPanel
-      title="Arbeitsunfähigkeit melden"
-      description="Es wird bewusst kein Feld für Diagnose oder Krankheitsgrund angeboten."
-      onClose={onClose}
+      title="Krankmeldung erfassen"
+      description="Wählen Sie die betroffene Person. Erfassen Sie ausschließlich den Abwesenheitszeitraum und keine Diagnose."
+      onClose={partialSuccess ? () => onSaved(targetProfileId) : onClose}
     >
       <form
         className="wf-form"
         onSubmit={handleSubmit((values) => report.mutate(values))}
         noValidate
       >
+        <EmployeeSelect
+          registration={{
+            ...register("profileId"),
+            onChange: async (event) => {
+              setFile(null);
+              setFileError("");
+              await register("profileId").onChange(event);
+            },
+          }}
+          error={errors.profileId?.message}
+          disabled={report.isPending || Boolean(partialSuccess)}
+        />
         <div className="wf-form-grid">
           <label className="wf-field">
             <span>Beginn</span>
@@ -572,20 +631,22 @@ function SickReportForm({
             <option value="pending">Attest folgt</option>
           </select>
         </label>
-        <label className="sick-upload">
-          <FileUp />
-          <span>
-            <strong>
-              {file ? file.name : "Attest direkt hochladen (optional)"}
-            </strong>
-            <small>PDF, JPG oder PNG · maximal 10 MB</small>
-          </span>
-          <input
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-            onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
+        {canUpload ? (
+          <label className="sick-upload">
+            <FileUp />
+            <span>
+              <strong>
+                {file ? file.name : "Attest direkt hochladen (optional)"}
+              </strong>
+              <small>PDF, JPG oder PNG · maximal 10 MB</small>
+            </span>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        ) : null}
         <FieldError>{fileError}</FieldError>
         <label className="wf-checkbox sick-confirm">
           <input
@@ -595,7 +656,7 @@ function SickReportForm({
           />
           <span>
             Ich bestätige, dass die Datei keine Patientendaten enthält und
-            ausschließlich zu meiner eigenen Krankmeldung gehört.
+            ausschließlich zur Krankmeldung der ausgewählten Person gehört.
           </span>
         </label>
         <FieldError>{errors.privacyConfirmed?.message}</FieldError>
@@ -609,8 +670,12 @@ function SickReportForm({
         </MutationNotice>
         <MutationNotice kind="info">{partialSuccess}</MutationNotice>
         <div className="wf-form-actions">
-          <button type="button" className="wf-secondary" onClick={onClose}>
-            {partialSuccess ? "Schließen" : "Abbrechen"}
+          <button
+            type="button"
+            className="wf-secondary"
+            onClick={partialSuccess ? () => onSaved(targetProfileId) : onClose}
+          >
+            {partialSuccess ? "Zur gespeicherten Meldung" : "Abbrechen"}
           </button>
           {!partialSuccess ? (
             <button
@@ -621,7 +686,7 @@ function SickReportForm({
               <ShieldCheck size={18} />
               {report.isPending
                 ? "Wird sicher gespeichert …"
-                : "Krankmeldung absenden"}
+                : "Krankmeldung speichern"}
             </button>
           ) : null}
         </div>
@@ -662,6 +727,7 @@ function SickRecordCard({
       await uploadCertificate({
         recordId: record.id,
         profileId,
+        ownerProfileId: record.profile_id,
         organizationId,
         file: followUp,
         version:
@@ -753,7 +819,9 @@ function SickRecordCard({
               ))}
             </div>
           ) : null}
-          {own && record.status !== "closed" ? (
+          {(own || canManage) &&
+          record.status !== "closed" &&
+          record.status !== "cancelled" ? (
             <div className="sick-follow-up">
               <input
                 type="file"
@@ -852,4 +920,128 @@ function SickRecordCard({
 
 export function SickLeaveAdminPage() {
   return <SickLeavePage />;
+}
+
+function SickCorrectionForm({
+  record,
+  onClose,
+}: {
+  record: SickLeaveRecord;
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const [startsOn, setStartsOn] = useState(record.starts_on);
+  const [endsOn, setEndsOn] = useState(record.expected_end_on ?? "");
+  const [endUnknown, setEndUnknown] = useState(record.end_unknown);
+  const [certificateStatus, setCertificateStatus] = useState(
+    record.certificate_status ?? "not_required",
+  );
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("correct_sick_leave_record", {
+        p_record_id: record.id,
+        p_starts_on: startsOn,
+        p_expected_end_on: endUnknown ? null : endsOn,
+        p_end_unknown: endUnknown,
+        p_certificate_status: certificateStatus,
+        p_correction_reason: reason.trim(),
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ["sick-leave-records"] });
+      onClose();
+    },
+  });
+  return (
+    <WorkflowPanel
+      title="Krankmeldung korrigieren"
+      description="Person, Bearbeitungsstatus und Attestdateien bleiben erhalten. Korrekturen werden protokolliert. Bitte keine Diagnose eintragen."
+      onClose={onClose}
+    >
+      <form
+        className="wf-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+      >
+        <p>
+          <strong>Mitarbeiter/in:</strong>{" "}
+          {record.profiles?.display_name ?? "Bestehende Person"}
+        </p>
+        <div className="wf-form-grid">
+          <label className="wf-field">
+            <span>Beginn</span>
+            <input
+              type="date"
+              value={startsOn}
+              required
+              onChange={(event) => setStartsOn(event.target.value)}
+            />
+          </label>
+          <label className="wf-field">
+            <span>Voraussichtliches Ende</span>
+            <input
+              type="date"
+              value={endsOn}
+              required={!endUnknown}
+              disabled={endUnknown}
+              min={startsOn}
+              onChange={(event) => setEndsOn(event.target.value)}
+            />
+          </label>
+          <label className="wf-checkbox">
+            <input
+              type="checkbox"
+              checked={endUnknown}
+              onChange={(event) => setEndUnknown(event.target.checked)}
+            />
+            <span>Ende noch unbekannt</span>
+          </label>
+          <label className="wf-field">
+            <span>Atteststatus</span>
+            <select
+              value={certificateStatus}
+              onChange={(event) => setCertificateStatus(event.target.value)}
+            >
+              {Object.entries(certificateLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="wf-field">
+          <span>Korrekturgrund (ohne Diagnose)</span>
+          <input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            minLength={3}
+            maxLength={500}
+            required
+          />
+        </label>
+        <MutationNotice kind="error">
+          {save.error
+            ? humanizeError(
+                save.error,
+                "Die Korrektur konnte nicht gespeichert werden. Prüfen Sie Zeitraum und Atteststatus.",
+              )
+            : null}
+        </MutationNotice>
+        <div className="wf-form-actions">
+          <button
+            type="submit"
+            className="wf-primary"
+            disabled={save.isPending || reason.trim().length < 3}
+          >
+            {save.isPending ? "Wird gespeichert …" : "Korrektur speichern"}
+          </button>
+        </div>
+      </form>
+    </WorkflowPanel>
+  );
 }

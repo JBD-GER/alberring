@@ -8,15 +8,22 @@ export default tseslint.config(
   {
     ignores: [
       "dist",
+      "dist-native",
+      "android",
+      "ios",
       ".vercel",
       "coverage",
       "playwright-report",
       "supabase/functions",
+      "supabase/.temp",
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  { files: ["scripts/**/*.mjs"], languageOptions: { globals: globals.node } },
+  {
+    files: ["scripts/**/*.mjs", "capacitor.config.ts"],
+    languageOptions: { globals: globals.node },
+  },
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: { ecmaVersion: 2022, globals: globals.browser },

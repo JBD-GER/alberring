@@ -1,11 +1,164 @@
 .user-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 320px;
 }
 .user-controls select {
-  flex: 1;
+  flex: 1 1 100%;
 }
-.user-controls .icon-button svg {
+.user-controls button svg {
   width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.user-controls .danger-text {
+  color: var(--danger);
+}
+.admin-user-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+@media (min-width: 901px) {
+  .admin-user {
+    grid-template-columns: 44px minmax(0, 1fr) auto minmax(180px, 260px);
+  }
+}
+.admin-role-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.admin-role-link svg {
+  width: 15px;
+  height: 15px;
+}
+.role-assignment {
+  scroll-margin-top: 24px;
+}
+.role-assignment > p {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 3px 0 8px;
+}
+.role-assignment label span {
+  display: grid;
+  gap: 3px;
+}
+.role-assignment label small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.role-assignment label input {
+  flex-shrink: 0;
+  min-height: 18px;
+}
+.team-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  align-items: start;
+}
+.team-member-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.team-member-picker legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.team-member-picker .search {
+  display: flex;
+}
+.team-member-picker .search input {
+  min-width: 0;
+}
+.team-member-options {
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 10px;
+  gap: 4px;
+}
+.team-member-picker .team-member-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 6px;
+  border-radius: 8px;
+  min-width: 0;
+}
+.team-member-option:hover {
+  background: var(--primary-soft);
+}
+.team-member-option input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+.team-member-option span {
+  flex: 1;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.team-member-option strong,
+.team-member-option small {
+  overflow-wrap: anywhere;
+}
+.team-member-option small {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.team-card > p,
+.team-editor > p {
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.team-member-summary:empty {
+  display: none;
+}
+.team-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.team-card .team-editor {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.team-card .form-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 700px) {
+  .admin-table .admin-user .user-controls {
+    grid-column: 1 / -1;
+    max-width: none;
+    justify-content: flex-start;
+  }
+  .admin-user .user-controls button {
+    flex: 1 1 100%;
+  }
+  .page-intro[data-tour-id="admin"] .primary.compact {
+    font-size: 0.9rem;
+  }
+  .team-card .team-actions {
+    flex-direction: column;
+  }
 }

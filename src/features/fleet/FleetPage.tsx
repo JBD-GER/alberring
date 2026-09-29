@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -17,7 +17,7 @@ import {
   UserRound,
   Wrench,
 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
   EmptyState,
@@ -35,6 +35,12 @@ import {
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 import "./fleet.css";
+import { PhotoActions } from "../../components/common/DeviceActions";
+import { UploadProgress } from "../../components/common/UploadProgress";
+import {
+  UploadError,
+  uploadPrivateFile,
+} from "../../services/platform/uploads";
 
 type VehicleStatus = "active" | "workshop" | "out_of_service" | "sold";
 type VehicleAssignment = {
@@ -101,6 +107,7 @@ type MaintenanceEvent = {
   completed_mileage: number | null;
   status: MaintenanceStatus;
   notes: string | null;
+  provider: string | null;
   created_at: string;
   vehicles: {
     internal_name: string;
@@ -165,10 +172,14 @@ type MileageFormValues = z.infer<typeof mileageSchema>;
 const vehicleSchema = z.object({
   internalName: z.string().trim().min(2, "Interne Bezeichnung fehlt.").max(100),
   licensePlate: z.string().trim().min(2, "Kennzeichen fehlt.").max(20),
-  make: z.string().trim().max(80),
-  model: z.string().trim().max(80),
+  make: z.string().trim().max(80, "Maximal 80 Zeichen."),
+  model: z.string().trim().max(80, "Maximal 80 Zeichen."),
   status: z.enum(["active", "workshop", "out_of_service", "sold"]),
-  currentMileage: z.number().int().min(0).max(9_999_999),
+  currentMileage: z
+    .number({ error: "Bitte einen Kilometerstand eingeben." })
+    .int("Nur ganze Kilometer eingeben.")
+    .min(0, "Der Kilometerstand darf nicht negativ sein.")
+    .max(9_999_999, "Bitte den Kilometerstand prüfen."),
   nextServiceOn: z.string(),
   assigneeId: z.string(),
 });
@@ -213,11 +224,37 @@ const maintenanceSchema = z
         "Bitte den Kilometerstand prüfen.",
       ),
     notes: z.string().trim().max(2000, "Maximal 2.000 Zeichen."),
+    provider: z.string().trim().max(160, "Maximal 160 Zeichen."),
+    status: z.enum(["planned", "due", "completed", "cancelled"]),
+    completedOn: z.string(),
+    completedMileage: z
+      .string()
+      .trim()
+      .refine(
+        (value) =>
+          value === "" || (/^\d+$/.test(value) && Number(value) <= 9_999_999),
+        "Bitte einen gültigen Kilometerstand eingeben.",
+      ),
   })
-  .refine((values) => Boolean(values.dueOn || values.dueMileage), {
-    message: "Bitte ein Fälligkeitsdatum oder einen Kilometerstand angeben.",
-    path: ["dueOn"],
-  });
+  .refine(
+    (values) =>
+      values.status === "cancelled" ||
+      values.status === "completed" ||
+      Boolean(values.dueOn || values.dueMileage),
+    {
+      message: "Bitte ein Fälligkeitsdatum oder einen Kilometerstand angeben.",
+      path: ["dueOn"],
+    },
+  )
+  .refine(
+    (values) =>
+      values.status !== "completed" ||
+      Boolean(values.completedOn && values.completedOn <= todayInputValue()),
+    {
+      message: "Bitte ein Abschlussdatum bis einschließlich heute angeben.",
+      path: ["completedOn"],
+    },
+  );
 type MaintenanceFormValues = z.infer<typeof maintenanceSchema>;
 
 const maintenanceCompleteSchema = z.object({
@@ -269,7 +306,13 @@ export function FleetPage() {
   const [damageVehicle, setDamageVehicle] = useState<Vehicle | null>(null);
   const [damageReviewTarget, setDamageReviewTarget] =
     useState<DamageReport | null>(null);
-  const [maintenanceEditorOpen, setMaintenanceEditorOpen] = useState(false);
+  const [maintenanceEditor, setMaintenanceEditor] = useState<
+    MaintenanceEvent | "new" | null
+  >(null);
+  const [damageEditor, setDamageEditor] = useState<DamageReport | null>(null);
+  const [mileageEditor, setMileageEditor] = useState<MileageSubmission | null>(
+    null,
+  );
   const [maintenanceCompleteTarget, setMaintenanceCompleteTarget] =
     useState<MaintenanceEvent | null>(null);
   const [maintenanceFilter, setMaintenanceFilter] = useState<"open" | "all">(
@@ -282,6 +325,7 @@ export function FleetPage() {
     null,
   );
   const canManage = has("fleet.manage");
+  const canCorrect = has("data.correct");
   const canViewAll = has("fleet.view_all") || canManage;
   const canSubmitMileage = has("mileage.submit_own");
   const canManageMileage = has("mileage.manage");
@@ -292,7 +336,7 @@ export function FleetPage() {
       const { data, error } = await supabase
         .from("vehicles")
         .select(
-          "id,internal_name,license_plate,make,model,status,current_mileage,next_service_on,vehicle_assignments(id,profile_id,valid_from,valid_until,primary_assignment,profiles!vehicle_assignments_profile_id_fkey(id,display_name))",
+          "id,internal_name,license_plate,make,model,status,current_mileage,next_service_on,vehicle_assignments!vehicle_assignments_vehicle_id_fkey(id,profile_id,valid_from,valid_until,primary_assignment,profiles!vehicle_assignments_profile_id_fkey(id,display_name))",
         )
         .order("internal_name");
       if (error) throw error;
@@ -336,7 +380,7 @@ export function FleetPage() {
       const { data, error } = await supabase
         .from("vehicle_maintenance_events")
         .select(
-          "id,vehicle_id,event_type,title,due_on,due_mileage,completed_on,completed_mileage,status,notes,created_at,vehicles(internal_name,license_plate,current_mileage)",
+          "id,vehicle_id,event_type,title,due_on,due_mileage,completed_on,completed_mileage,status,notes,provider,created_at,vehicles(internal_name,license_plate,current_mileage)",
         )
         .order("due_on", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -448,6 +492,7 @@ export function FleetPage() {
 
       {mileageVehicle && appSession ? (
         <MileageForm
+          key={mileageVehicle.id}
           vehicle={mileageVehicle}
           vehicles={ownVehicles}
           organizationId={appSession.profile.organization_id}
@@ -456,6 +501,7 @@ export function FleetPage() {
       ) : null}
       {damageVehicle && appSession ? (
         <DamageReportForm
+          key={damageVehicle.id}
           vehicle={damageVehicle}
           vehicles={reportableVehicles}
           organizationId={appSession.profile.organization_id}
@@ -465,27 +511,48 @@ export function FleetPage() {
       ) : null}
       {damageReviewTarget && canManage && appSession ? (
         <DamageStatusPanel
+          key={damageReviewTarget.id}
           report={damageReviewTarget}
           managerId={appSession.profile.id}
           onClose={() => setDamageReviewTarget(null)}
         />
       ) : null}
-      {maintenanceEditorOpen && canManage && appSession ? (
+      {maintenanceEditor &&
+      canManage &&
+      appSession &&
+      (maintenanceEditor === "new" || canCorrect) ? (
         <MaintenanceEditor
+          key={maintenanceEditor === "new" ? "new" : maintenanceEditor.id}
+          event={maintenanceEditor === "new" ? null : maintenanceEditor}
           vehicles={vehicles}
-          organizationId={appSession.profile.organization_id}
-          createdBy={appSession.profile.id}
-          onClose={() => setMaintenanceEditorOpen(false)}
+          onClose={() => setMaintenanceEditor(null)}
+        />
+      ) : null}
+      {damageEditor && canCorrect ? (
+        <DamageEditor
+          key={damageEditor.id}
+          report={damageEditor}
+          vehicles={vehicles}
+          onClose={() => setDamageEditor(null)}
+        />
+      ) : null}
+      {mileageEditor && canCorrect ? (
+        <MileageCorrectionPanel
+          key={mileageEditor.id}
+          submission={mileageEditor}
+          onClose={() => setMileageEditor(null)}
         />
       ) : null}
       {maintenanceCompleteTarget && canManage ? (
         <MaintenanceCompletePanel
+          key={maintenanceCompleteTarget.id}
           event={maintenanceCompleteTarget}
           onClose={() => setMaintenanceCompleteTarget(null)}
         />
       ) : null}
       {editingVehicle && canManage && appSession ? (
         <VehicleEditor
+          key={editingVehicle === "new" ? "new" : editingVehicle.id}
           vehicle={editingVehicle === "new" ? null : editingVehicle}
           people={peopleQuery.data ?? []}
           organizationId={appSession.profile.organization_id}
@@ -494,6 +561,7 @@ export function FleetPage() {
       ) : null}
       {reviewTarget && canManageMileage ? (
         <MileageReviewPanel
+          key={reviewTarget.id}
           submission={reviewTarget}
           onClose={() => setReviewTarget(null)}
         />
@@ -774,6 +842,15 @@ export function FleetPage() {
                       >
                         <ClipboardCheck size={17} /> Status bearbeiten
                       </button>
+                      {canCorrect ? (
+                        <button
+                          type="button"
+                          className="wf-secondary"
+                          onClick={() => setDamageEditor(report)}
+                        >
+                          <Pencil size={17} /> Meldung bearbeiten
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </article>
@@ -796,7 +873,7 @@ export function FleetPage() {
             <button
               type="button"
               className="wf-primary"
-              onClick={() => setMaintenanceEditorOpen(true)}
+              onClick={() => setMaintenanceEditor("new")}
               disabled={vehicles.length === 0}
             >
               <Plus size={18} /> Wartung planen
@@ -844,7 +921,7 @@ export function FleetPage() {
                   <button
                     type="button"
                     className="wf-secondary"
-                    onClick={() => setMaintenanceEditorOpen(true)}
+                    onClick={() => setMaintenanceEditor("new")}
                   >
                     <Wrench size={18} /> Ersten Termin planen
                   </button>
@@ -892,20 +969,48 @@ export function FleetPage() {
                         </span>
                       ) : null}
                     </div>
+                    {event.provider ? (
+                      <p className="fleet-operation-description">
+                        Werkstatt: {event.provider}
+                      </p>
+                    ) : null}
+                    {event.completed_mileage !== null ? (
+                      <p className="fleet-operation-description">
+                        Abgeschlossen bei{" "}
+                        {Number(event.completed_mileage).toLocaleString(
+                          "de-DE",
+                        )}{" "}
+                        km
+                      </p>
+                    ) : null}
                     {event.notes ? (
                       <p className="fleet-operation-description">
                         {event.notes}
                       </p>
                     ) : null}
-                    {event.status === "planned" || event.status === "due" ? (
+                    {canCorrect ||
+                    event.status === "planned" ||
+                    event.status === "due" ? (
                       <div className="wf-card-actions">
-                        <button
-                          type="button"
-                          className="wf-primary"
-                          onClick={() => setMaintenanceCompleteTarget(event)}
-                        >
-                          <Check size={17} /> Wartung abschließen
-                        </button>
+                        {canCorrect ? (
+                          <button
+                            type="button"
+                            className="wf-secondary"
+                            onClick={() => setMaintenanceEditor(event)}
+                          >
+                            <Pencil size={17} /> Wartung bearbeiten
+                          </button>
+                        ) : null}
+                        {event.status === "planned" ||
+                        event.status === "due" ? (
+                          <button
+                            type="button"
+                            className="wf-primary"
+                            onClick={() => setMaintenanceCompleteTarget(event)}
+                          >
+                            <Check size={17} /> Wartung abschließen
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>
@@ -967,6 +1072,15 @@ export function FleetPage() {
                     </div>
                     <div className="fleet-history-status">
                       <StatusPill label={status.label} tone={status.tone} />
+                      {canCorrect ? (
+                        <button
+                          type="button"
+                          className="wf-secondary"
+                          onClick={() => setMileageEditor(submission)}
+                        >
+                          <Pencil size={16} /> Meldung korrigieren
+                        </button>
+                      ) : null}
                       {reviewable ? (
                         <button
                           type="button"
@@ -1203,15 +1317,29 @@ function DamageStatusPanel({
   );
 }
 
-function MaintenanceEditor({
+const damageEditSchema = damageSchema.extend({
+  occurredOn: z
+    .string()
+    .refine(
+      (value) => !value || value <= todayInputValue(),
+      "Das Schadensdatum darf nicht in der Zukunft liegen.",
+    ),
+  status: z.enum([
+    "reported",
+    "reviewing",
+    "repair_planned",
+    "resolved",
+    "rejected",
+  ]),
+});
+
+function DamageEditor({
+  report,
   vehicles,
-  organizationId,
-  createdBy,
   onClose,
 }: {
+  report: DamageReport;
   vehicles: Vehicle[];
-  organizationId: string;
-  createdBy: string;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -1219,45 +1347,295 @@ function MaintenanceEditor({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<MaintenanceFormValues>({
-    resolver: zodResolver(maintenanceSchema),
+  } = useForm<z.infer<typeof damageEditSchema>>({
+    resolver: zodResolver(damageEditSchema),
     defaultValues: {
-      vehicleId: vehicles[0]?.id ?? "",
-      eventType: "service",
-      title: "",
-      dueOn: "",
-      dueMileage: "",
-      notes: "",
+      vehicleId: report.vehicle_id,
+      occurredOn: report.occurred_on ?? "",
+      description: report.description,
+      status: report.status,
     },
   });
   const save = useMutation({
-    mutationFn: async (values: MaintenanceFormValues) => {
-      const selectedVehicle = vehicles.find(
-        (vehicle) => vehicle.id === values.vehicleId,
-      );
-      if (!selectedVehicle) throw new Error("Fahrzeug nicht verfügbar");
-      const dueMileage = values.dueMileage ? Number(values.dueMileage) : null;
-      const isDue = Boolean(
-        (values.dueOn && values.dueOn <= todayInputValue()) ||
-        (dueMileage !== null && dueMileage <= selectedVehicle.current_mileage),
-      );
-      const { data, error } = await supabase
-        .from("vehicle_maintenance_events")
-        .insert({
-          organization_id: organizationId,
-          vehicle_id: values.vehicleId,
-          event_type: values.eventType,
-          title: values.title.trim(),
-          due_on: values.dueOn || null,
-          due_mileage: dueMileage,
-          status: isDue ? "due" : "planned",
-          notes: values.notes.trim() || null,
-          created_by: createdBy,
-        })
-        .select("id")
-        .single();
+    mutationFn: async (values: z.infer<typeof damageEditSchema>) => {
+      const { error } = await supabase.rpc("correct_vehicle_damage_report", {
+        p_report_id: report.id,
+        p_vehicle_id: values.vehicleId,
+        p_occurred_on: values.occurredOn || null,
+        p_description: values.description,
+        p_status: values.status,
+      });
       if (error) throw error;
-      return data.id as string;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["vehicle-damage-reports"],
+      });
+      onClose();
+    },
+  });
+  return (
+    <WorkflowPanel
+      title="Schadensmeldung bearbeiten"
+      description="Fahrzeug, Datum, Beschreibung und Status korrigieren. Die meldende Person bleibt erhalten."
+      onClose={onClose}
+    >
+      <form
+        className="wf-form"
+        onSubmit={handleSubmit((values) => save.mutate(values))}
+        noValidate
+      >
+        <div className="wf-form-grid">
+          <label className="wf-field">
+            <span>Fahrzeug</span>
+            <select {...register("vehicleId")}>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.license_plate} · {vehicle.internal_name}
+                </option>
+              ))}
+            </select>
+            <FieldError>{errors.vehicleId?.message}</FieldError>
+          </label>
+          <label className="wf-field">
+            <span>Schadensdatum</span>
+            <input
+              type="date"
+              max={todayInputValue()}
+              {...register("occurredOn")}
+            />
+            <FieldError>{errors.occurredOn?.message}</FieldError>
+          </label>
+          <label className="wf-field">
+            <span>Bearbeitungsstatus</span>
+            <select {...register("status")}>
+              {(Object.keys(damageStatusMeta) as DamageStatus[]).map(
+                (status) => (
+                  <option key={status} value={status}>
+                    {damageStatusMeta[status].label}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+        </div>
+        <label className="wf-field">
+          <span>Schadensbeschreibung</span>
+          <textarea {...register("description")} maxLength={4000} />
+          <FieldError>{errors.description?.message}</FieldError>
+        </label>
+        <MutationNotice kind="error">
+          {save.error
+            ? humanizeError(
+                save.error,
+                "Die Schadensmeldung konnte nicht gespeichert werden.",
+              )
+            : null}
+        </MutationNotice>
+        <div className="wf-form-actions">
+          <button type="button" className="wf-secondary" onClick={onClose}>
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            className="wf-primary"
+            disabled={save.isPending}
+          >
+            <Save size={18} />
+            {save.isPending
+              ? "Wird gespeichert …"
+              : "Schadensmeldung speichern"}
+          </button>
+        </div>
+      </form>
+    </WorkflowPanel>
+  );
+}
+
+const mileageCorrectionSchema = mileageSchema.extend({
+  readOn: z
+    .string()
+    .min(1, "Ablesedatum fehlt.")
+    .refine(
+      (value) => value <= todayInputValue(),
+      "Das Ablesedatum darf nicht in der Zukunft liegen.",
+    ),
+  status: z.enum(["verified", "rejected"]),
+  comment: z
+    .string()
+    .trim()
+    .min(6, "Bitte die Korrektur kurz begründen (mindestens 6 Zeichen).")
+    .max(1000, "Maximal 1.000 Zeichen."),
+});
+
+function MileageCorrectionPanel({
+  submission,
+  onClose,
+}: {
+  submission: MileageSubmission;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<z.infer<typeof mileageCorrectionSchema>>({
+    resolver: zodResolver(mileageCorrectionSchema),
+    defaultValues: {
+      vehicleId: submission.vehicle_id,
+      mileage: submission.mileage,
+      readOn: submission.read_on,
+      status: submission.status === "rejected" ? "rejected" : "verified",
+      comment: "",
+    },
+  });
+  const save = useMutation({
+    mutationFn: async (values: z.infer<typeof mileageCorrectionSchema>) => {
+      const { error } = await supabase.rpc("correct_mileage_submission", {
+        p_submission_id: submission.id,
+        p_mileage: values.mileage,
+        p_read_on: values.readOn,
+        p_status: values.status,
+        p_comment: values.comment,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mileage-submissions"] }),
+        queryClient.invalidateQueries({ queryKey: ["fleet-vehicles"] }),
+      ]);
+      onClose();
+    },
+  });
+  return (
+    <WorkflowPanel
+      title="Kilometermeldung korrigieren"
+      description={`${submission.vehicles?.license_plate ?? "Fahrzeug"} · Die ursprünglichen Werte und Ihre Begründung bleiben im Änderungsprotokoll erhalten.`}
+      onClose={onClose}
+    >
+      <form
+        className="wf-form"
+        onSubmit={handleSubmit((values) => save.mutate(values))}
+        noValidate
+      >
+        <div className="wf-form-grid">
+          <label className="wf-field">
+            <span>Korrigierter Kilometerstand</span>
+            <input
+              type="number"
+              min="0"
+              max="9999999"
+              step="1"
+              {...register("mileage", { valueAsNumber: true })}
+            />
+            <FieldError>{errors.mileage?.message}</FieldError>
+          </label>
+          <label className="wf-field">
+            <span>Ablesedatum</span>
+            <input
+              type="date"
+              max={todayInputValue()}
+              {...register("readOn")}
+            />
+            <FieldError>{errors.readOn?.message}</FieldError>
+          </label>
+          <label className="wf-field">
+            <span>Prüfstatus nach Korrektur</span>
+            <select {...register("status")}>
+              <option value="verified">Geprüft</option>
+              <option value="rejected">Abgelehnt</option>
+            </select>
+          </label>
+        </div>
+        <label className="wf-field">
+          <span>Korrekturgrund</span>
+          <textarea {...register("comment")} maxLength={1000} />
+          <FieldError>{errors.comment?.message}</FieldError>
+        </label>
+        <MutationNotice kind="error">
+          {save.error
+            ? humanizeError(
+                save.error,
+                "Die Korrektur konnte nicht gespeichert werden. Prüfen Sie die übrigen Meldungen des Fahrzeugs und den Meldemonat.",
+              )
+            : null}
+        </MutationNotice>
+        <div className="wf-form-actions">
+          <button type="button" className="wf-secondary" onClick={onClose}>
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            className="wf-primary"
+            disabled={save.isPending}
+          >
+            <Save size={18} />
+            {save.isPending ? "Wird gespeichert …" : "Korrektur speichern"}
+          </button>
+        </div>
+      </form>
+    </WorkflowPanel>
+  );
+}
+
+function MaintenanceEditor({
+  vehicles,
+  event,
+  onClose,
+}: {
+  vehicles: Vehicle[];
+  event: MaintenanceEvent | null;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<MaintenanceFormValues>({
+    resolver: zodResolver(maintenanceSchema),
+    defaultValues: {
+      vehicleId: event?.vehicle_id ?? vehicles[0]?.id ?? "",
+      eventType: event?.event_type ?? "service",
+      title: event?.title ?? "",
+      dueOn: event?.due_on ?? "",
+      dueMileage: event?.due_mileage == null ? "" : String(event.due_mileage),
+      notes: event?.notes ?? "",
+      provider: event?.provider ?? "",
+      status: event?.status ?? "planned",
+      completedOn: event?.completed_on ?? "",
+      completedMileage:
+        event?.completed_mileage == null ? "" : String(event.completed_mileage),
+    },
+  });
+  const status = useWatch({ control, name: "status" });
+  const save = useMutation({
+    mutationFn: async (values: MaintenanceFormValues) => {
+      const { data, error } = await supabase.rpc(
+        "save_vehicle_maintenance_event",
+        {
+          p_event_id: event?.id ?? null,
+          p_vehicle_id: values.vehicleId,
+          p_event_type: values.eventType,
+          p_title: values.title,
+          p_due_on: values.dueOn || null,
+          p_due_mileage: values.dueMileage ? Number(values.dueMileage) : null,
+          p_status: values.status,
+          p_provider: values.provider || null,
+          p_notes: values.notes || null,
+          p_completed_on:
+            values.status === "completed" ? values.completedOn : null,
+          p_completed_mileage:
+            values.status === "completed" && values.completedMileage
+              ? Number(values.completedMileage)
+              : null,
+        },
+      );
+      if (error) throw error;
+      return data as string;
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -1268,8 +1646,8 @@ function MaintenanceEditor({
   });
   return (
     <WorkflowPanel
-      title="Wartung planen"
-      description="Legen Sie mindestens ein Fälligkeitsdatum oder einen Ziel-Kilometerstand fest."
+      title={event ? "Wartung bearbeiten" : "Wartung planen"}
+      description="Termin, Werkstatt und Details anpassen. Über den Status können Sie einen Termin auch stornieren oder einen Abschluss korrigieren."
       onClose={onClose}
     >
       <form
@@ -1304,6 +1682,23 @@ function MaintenanceEditor({
               ))}
             </select>
           </label>
+          <label className="wf-field">
+            <span>Wartungsstatus</span>
+            <select {...register("status")}>
+              {(Object.keys(maintenanceStatusMeta) as MaintenanceStatus[]).map(
+                (value) => (
+                  <option key={value} value={value}>
+                    {maintenanceStatusMeta[value].label}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          <label className="wf-field">
+            <span>Werkstatt / Dienstleister</span>
+            <input {...register("provider")} maxLength={160} />
+            <FieldError>{errors.provider?.message}</FieldError>
+          </label>
           <label className="wf-field fleet-field-wide">
             <span>Bezeichnung</span>
             <input
@@ -1337,6 +1732,30 @@ function MaintenanceEditor({
             />
             <FieldError>{errors.dueMileage?.message}</FieldError>
           </label>
+          {status === "completed" ? (
+            <>
+              <label className="wf-field">
+                <span>Abgeschlossen am</span>
+                <input
+                  type="date"
+                  max={todayInputValue()}
+                  {...register("completedOn")}
+                />
+                <FieldError>{errors.completedOn?.message}</FieldError>
+              </label>
+              <label className="wf-field">
+                <span>Abschluss-Kilometerstand</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="9999999"
+                  step="1"
+                  {...register("completedMileage")}
+                />
+                <FieldError>{errors.completedMileage?.message}</FieldError>
+              </label>
+            </>
+          ) : null}
         </div>
         <label className="wf-field">
           <span>
@@ -1581,6 +2000,9 @@ function MileageForm({
   const queryClient = useQueryClient();
   const [photo, setPhoto] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const {
     register,
     handleSubmit,
@@ -1600,10 +2022,19 @@ function MileageForm({
         validatePhoto(photo);
         const extension = photo.type === "image/png" ? "png" : "jpg";
         photoPath = `${organizationId}/${values.vehicleId}/mileage/${crypto.randomUUID()}.${extension}`;
-        const { error: uploadError } = await supabase.storage
-          .from("vehicle-files")
-          .upload(photoPath, photo, { contentType: photo.type });
-        if (uploadError) throw uploadError;
+        uploadController.current = new AbortController();
+        try {
+          await uploadPrivateFile(
+            "vehicle-files",
+            photoPath,
+            photo,
+            setUploadProgress,
+            uploadController.current.signal,
+          );
+        } catch (uploadError) {
+          await supabase.storage.from("vehicle-files").remove([photoPath]);
+          throw uploadError;
+        }
       }
       const { data, error } = await supabase.rpc("submit_mileage", {
         p_vehicle_id: values.vehicleId,
@@ -1624,6 +2055,10 @@ function MileageForm({
         queryClient.invalidateQueries({ queryKey: ["fleet-vehicles"] }),
       ]);
       onClose();
+    },
+    onSettled: () => {
+      uploadController.current = null;
+      setUploadProgress(null);
     },
   });
   const selectPhoto = (file: File | null) => {
@@ -1708,12 +2143,21 @@ function MileageForm({
           />
         </label>
         <FieldError>{fileError}</FieldError>
+        <PhotoActions onSelect={selectPhoto} disabled={submit.isPending} />
+        {uploadProgress !== null && (
+          <UploadProgress
+            percent={uploadProgress}
+            onCancel={() => uploadController.current?.abort()}
+          />
+        )}
         <MutationNotice kind="error">
           {submit.error
-            ? humanizeError(
-                submit.error,
-                "Der Kilometerstand konnte nicht gespeichert werden. Bitte prüfen Sie den Wert und die Monatsmeldung.",
-              )
+            ? submit.error instanceof UploadError
+              ? submit.error.message
+              : humanizeError(
+                  submit.error,
+                  "Der Kilometerstand konnte nicht gespeichert werden. Bitte prüfen Sie den Wert und die Monatsmeldung.",
+                )
             : null}
         </MutationNotice>
         <div className="wf-form-actions">
@@ -1824,11 +2268,23 @@ function VehicleEditor({
           </label>
           <label className="wf-field">
             <span>Hersteller</span>
-            <input {...register("make")} placeholder="Volkswagen" />
+            <input
+              {...register("make")}
+              maxLength={80}
+              placeholder="Volkswagen"
+              aria-invalid={Boolean(errors.make)}
+            />
+            <FieldError>{errors.make?.message}</FieldError>
           </label>
           <label className="wf-field">
             <span>Modell</span>
-            <input {...register("model")} placeholder="up!" />
+            <input
+              {...register("model")}
+              maxLength={80}
+              placeholder="up!"
+              aria-invalid={Boolean(errors.model)}
+            />
+            <FieldError>{errors.model?.message}</FieldError>
           </label>
           <label className="wf-field">
             <span>Status</span>
@@ -1844,6 +2300,7 @@ function VehicleEditor({
             <input
               type="number"
               min="0"
+              max="9999999"
               step="1"
               {...register("currentMileage", { valueAsNumber: true })}
               aria-invalid={Boolean(errors.currentMileage)}

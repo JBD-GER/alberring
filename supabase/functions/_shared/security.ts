@@ -88,7 +88,6 @@ export class HttpError extends Error {
 const manualEmailLinkErrorCodes = new Set([
   "email_address_not_authorized",
   "email_provider_disabled",
-  "over_email_send_rate_limit",
 ]);
 
 export const shouldUseManualEmailLink = (error: unknown) =>

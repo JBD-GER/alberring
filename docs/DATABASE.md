@@ -1,12 +1,26 @@
 # Datenbank und Supabase-Betrieb
 
+Produktiv bereitgestellt nach ausdrücklicher Freigabe; siehe [Veröffentlichungsnachweis vom 16.09.2026](VEROEFFENTLICHUNG_2026-09-16.md).
+
+## Erweiterung 16.09.2026 (veröffentlicht)
+
+Die vier Migrationen ab `20260916080044` erweitern Mitarbeiterbearbeitung, datenerhaltende Zugangslöschung und Fachdatenkorrekturen. `profiles.auth_user_id` ist bei gelöschten Konten nullable; `deleted_at` und `deleted_by` kennzeichnen das unveränderliche verbleibende Fachprofil. Auth-Konto, Sessions und Refresh-Tokens werden entfernt, Fachprofil und alle Referenzen bleiben erhalten. Der Anzeigename wird „Gelöschter Benutzer“. Private Storage-Dateien bleiben erhalten; nur bisherige Auth-Eigentümerreferenzen werden geleert. Keine SQL-Löschung von Storage-Objekten.
+
+`private.current_profile_id`/Berechtigungsfunktionen verlangen weiterhin eine aktive Auth-verknüpfte Person. RLS gewährt ehemaligen JWT-Subjekten keine Organisationsrechte. Nachrichtenleser können das verbliebene Profil auflösen; geschützte ehemalige Personalangaben bleiben gewöhnlichen Kollegen verborgen. `private.is_deleted_profile` ermöglicht die Prüfung ohne Freigabe interner Profilspalten. Einzelheiten und Tests: `docs/KUNDENFEEDBACK_2026-09-16.md`.
+
+Die frühere physische Löschung ungenutzter Einladungsprofile ist im neuen lokalen Stand abgelöst. Vor einer späteren Freigabe nur fehlende Migrationen anwenden, nicht historische Setup-Bundles erneut ausführen.
+
 ## Welches SQL ausführen?
 
-Es gibt zwei bewusst getrennte Installationswege:
+Für ein bereits bis 08.09.2026 migriertes Projekt sind die neuen Migrationen `20260916073726_delete_unused_invited_users.sql`, `20260916073729_single_step_admin_leave_approval.sql` und `20260916074424_harden_invitation_delete_rpc_search_path.sql` in dieser Reihenfolge einzuspielen. Danach die neue Edge Function `admin-delete-invited-user` und das Frontend veröffentlichen. Die Urlaubsfreigabe wird auf eine Stufe umgestellt; offene Anträge werden nicht automatisch genehmigt. Bereits erteilte Entscheidungen und abgeschlossene Anträge bleiben erhalten. Ein noch offener Antrag kann anschließend auch von der bisher entscheidenden Person abschließend genehmigt werden.
+
+Bei einem Stand bis August 2026 zuerst [`20260908090936_simplify_roles_teams_and_communication.sql`](../supabase/migrations/20260908090936_simplify_roles_teams_and_communication.sql) einspielen. Sie ergänzt die Admin-Erfassung von Abwesenheiten, die Team-/Chatmitgliederverwaltung und private Gruppenbilder. Die vollständigen Setup-Bundles nicht erneut auf ein bereits vollständig migriertes Projekt anwenden.
+
+Für ältere beziehungsweise neue Projekte gibt es zwei Installationswege:
 
 ### Bestehendes Alberring-Projekt
 
-Wenn `202607100001_core.sql` und `202607100002_messaging.sql` in diesem Projekt bereits ausgeführt wurden, im Supabase **SQL Editor** genau diese Datei vollständig ausführen:
+Wenn ausschließlich `202607100001_core.sql` und `202607100002_messaging.sql` in diesem Projekt bereits ausgeführt wurden, im Supabase **SQL Editor** genau diese Datei vollständig ausführen:
 
 ```text
 supabase/SETUP_UPGRADE_20260710.sql
@@ -61,6 +75,8 @@ SQL kann die gehostete Supabase-Auth-Einstellung für öffentliche Registrierung
 
 `admin-create-user` kann einen unbestätigten, zur gleichen Organisation gehörenden Auth-Invite nach einem Timeout sicher wieder aufnehmen. Vorhandene aktive oder organisationsfremde Konten werden nicht übernommen. Erneutes Senden ist serverseitig mit einem kurzen Cooldown serialisiert und auditiert. Ist der Supabase-Mailversand nicht verfügbar oder gedrosselt, wird der Benutzer trotzdem angelegt und der berechtigten Administration ein kurzlebiger Einmal-Link angezeigt; dieser darf nur über einen sicheren Kanal an den vorgesehenen Empfänger weitergegeben werden.
 
+`admin-delete-invited-user` ruft die authentifizierte RPC `admin_delete_unused_invited_user` auf. Sie prüft organisationsgebunden `users.manage`, schützt eigene und privilegierte Konten und löscht ausschließlich unbestätigte, nie angemeldete Einladungen ohne Fachhistorie oder Dateien. Profil, initiale Zuordnungen und Auth-Konto werden atomar entfernt; das Audit-Protokoll bleibt erhalten. Ein gerade laufender Einladungsversand blockiert die Löschung vorübergehend. Genutzte Konten werden über den bestehenden Statuswechsel archiviert. Eine spätere Umstellung der Urlaubsfreigabe von einer auf zwei Stufen gilt für neu erfasste Anträge; bestehenden Ein-Stufen-Anträgen wird kein zusätzlicher Schritt hinzugefügt.
+
 ## Versionierte Quellen
 
 Die fachlich maßgeblichen Migrationsquellen bleiben:
@@ -89,6 +105,10 @@ Die fachlich maßgeblichen Migrationsquellen bleiben:
 22. `20260805121759_expand_admin_onboarding_experience.sql` – mehrstufige Team-/Einladungs-Einrichtung, idempotente Finalisierung und exklusive serverseitige Produkttour
 23. `20260805150244_preserve_onboarding_resume_marker.sql` – stabiler Wiederaufnahmezeitpunkt über beliebig viele Reloads und Einladungsversuche
 24. `20260805150707_prioritize_onboarding_primary_team.sql` – garantiert das bisherige Primärteam auch bei mehr als acht aktiven Teams im begrenzten Onboarding-Katalog
+25. `20260908090936_simplify_roles_teams_and_communication.sql` – Admin-Erfassung von Abwesenheiten, vollständige Super-Admin-Rechte, atomare Rollen-/Mitgliederauswahl und private Gruppenbilder
+26. `20260916073726_delete_unused_invited_users.sql` – atomare, berechtigungsgeprüfte Löschung ungenutzter Einladungen ohne Historienverlust
+27. `20260916073729_single_step_admin_leave_approval.sql` – eine Urlaubsfreigabe als Standard und kontrollierte eigene Admin-Freigaben
+28. `20260916074424_harden_invitation_delete_rpc_search_path.sql` – fester Suchpfad der öffentlichen Lösch-RPC
 
 `SETUP_FRESH.sql` und `SETUP_UPGRADE_20260710.sql` sind die bequemen Installationsbundles für den SQL Editor. Sie werden mit `npm run supabase:build:setup` vollständig aus den versionierten Migrationen und `seed.sql` erzeugt. Die Einzelmigrationen bleiben die maßgebliche Quelle.
 
@@ -109,20 +129,23 @@ Identität und Administration:
 
 - `get_my_profile`, `my_permissions`, `list_directory_entries`, `admin_list_users`
 - `update_own_profile`, `activate_my_profile`
-- `set_user_role`, `set_user_team`, `set_role_permission`
+- `set_user_roles`, `set_user_role`, `set_user_team`, `set_role_permission`
+- `create_team`, `set_team_members`, `admin_list_team_members`
+- `admin_delete_unused_invited_user` für ungenutzte Einladungen über die gleichnamige Admin-Aktion
 - `bootstrap_first_admin` ausschließlich für die einmalige Einrichtung
 
 Kommunikation und News:
 
 - `list_conversations`, `get_or_create_direct_conversation`, `create_group_conversation`
 - `send_message`, `edit_message`, `retract_message`
+- `can_manage_conversation`, `set_conversation_members`, `set_conversation_avatar`
 - `save_news_post`, `publish_scheduled_news`, `mark_news_opened`, `acknowledge_news`
 
 Fachworkflows:
 
 - `save_shift`, `acknowledge_shift`
-- `submit_leave_request`, `withdraw_leave_request`, `decide_leave_request`
-- `report_sick_leave`, `extend_sick_leave`, `set_sick_leave_status`
+- `create_leave_request_for_user` (nur Admin/Super Admin), `withdraw_leave_request`, `decide_leave_request`
+- `report_sick_leave_for_user` (nur Admin/Super Admin), `extend_sick_leave`, `set_sick_leave_status`
 - `create_document_upload`, `finalize_document_upload`, `add_document_version`, `archive_document`
 - `save_vehicle`, `submit_mileage`, `review_mileage_submission`
 - `save_material_request`, `set_material_request_status`
@@ -143,6 +166,7 @@ Neue Versionen erhalten eine fortlaufende Nummer, setzen vorhandene Lesebestäti
 Alle Buckets sind privat. Verbindliche Pfadmuster sind:
 
 - `message-attachments/{org}/{conversation}/{message}/{file}`
+- `conversation-avatars/{org}/{conversation}/{file}` (JPG, PNG, WebP oder GIF, maximal 5 MB)
 - `news-attachments/{org}/{news}/{file}`
 - `documents/{org}/{document}/{version}/{file}`
 - `employee-documents/{org}/{employee}/{document}/{version}`
@@ -151,7 +175,7 @@ Alle Buckets sind privat. Verbindliche Pfadmuster sind:
 - `material-request-files/{org}/{request}/{file}`
 - `avatars/{org}/{profile}/{file}`
 
-Sichere Downloads laufen über `create-secure-download`. Die Function prüft die Fachberechtigung erneut, protokolliert den Zugriff und erstellt eine kurzlebige signierte URL. Die Laufzeit wird über `SIGNED_URL_TTL_SECONDS` konfiguriert und serverseitig begrenzt.
+Gruppenbilder werden über Storage-RLS geprüft und mit 60 Sekunden gültigen signierten URLs angezeigt. Andere sichere Downloads laufen über `create-secure-download`. Die Function prüft die Fachberechtigung erneut, protokolliert den Zugriff und erstellt eine kurzlebige signierte URL. Die Laufzeit wird über `SIGNED_URL_TTL_SECONDS` konfiguriert und serverseitig begrenzt.
 
 ## Edge Functions
 
@@ -174,7 +198,9 @@ Einladungs- und Recovery-Mails laufen über Supabase Auth und benötigen für au
 
 ## Tests und aktueller Nachweis
 
-Die sieben Dateien unter [`supabase/tests`](../supabase/tests) enthalten insgesamt 263 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten, 34 für Data-API-Rechte, 8 für den Automations-Scheduler, 51 für die transaktionale Onboarding-Einrichtung sowie 37 für die strikte Konto-/Rollen-Abgrenzung und Produkttour. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, bestehende Teamdaten, mehrfache Wiederaufnahme, Auth-/Profil-E-Mail-Abweichungen, Admin-/Mitarbeiter-Gegenproben, Tourfortschritt und Aufschub, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
+Die bisherige Suite unter [`supabase/tests`](../supabase/tests) enthält 263 positive und negative pgTAP-Prüfungen: 54 für RLS/Storage, 41 für autorisierte Workflows und Storage-Härtung, 38 für RPC-Invarianten, 34 für Data-API-Rechte, 8 für den Automations-Scheduler, 51 für die transaktionale Onboarding-Einrichtung sowie 37 für die strikte Konto-/Rollen-Abgrenzung und Produkttour. Abgedeckt sind unter anderem Organisationstrennung, Chatmitgliedschaft und Anhangbindung, Team-Scope, Invite- und Rollen-Delegation, bestehende Teamdaten, mehrfache Wiederaufnahme, Auth-/Profil-E-Mail-Abweichungen, Admin-/Mitarbeiter-Gegenproben, Tourfortschritt und Aufschub, Selbstfreigaben, Veröffentlichungsrechte, Dokument- und Datei-Cleanup, Fuhrpark-Tenant-FKs, sichere Downloads sowie Cron-/Vault-Rechte.
+
+Die neue Datei `communication_admin.test.sql` ergänzt die Admin-Erfassung für ausgewählte Mitarbeitende, Rollenwechsel, Team-/Chatmitgliedschaften und die privaten Gruppenbilder. Den aktuellen lokalen Prüfstand dokumentiert [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Ausführung mit lokaler Supabase CLI und Docker:
 

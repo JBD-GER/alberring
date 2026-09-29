@@ -25,9 +25,13 @@
 }
 .document-folder strong {
   align-self: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .document-folder span {
   grid-column: 2;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12px;
 }

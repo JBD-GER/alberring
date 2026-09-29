@@ -1,3 +1,7 @@
+# Capacitor-Integration: neuer Stand
+
+Die früher hier beschriebene Vorbereitung ist am 17.09.2026 durch native Projekte und Geräteadapter erweitert worden. Maßgeblich sind [Architektur](06_ARCHITEKTUR.md), [Release-Prozess](03_RELEASE_PROZESS.md) und [Entwicklungsnachweis](09_ENTWICKLUNGSNACHWEIS.md). Die folgende bisherige Beschreibung bleibt als historischer Ausgangszustand erhalten.
+
 # Capacitor-Vorbereitung
 
 Die Web-App ist für einen späteren Capacitor-Wrapper vorbereitet:

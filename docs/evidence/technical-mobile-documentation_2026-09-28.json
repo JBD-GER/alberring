@@ -1,0 +1,162 @@
+{
+  "document_date": "2026-09-28",
+  "git_base_commit": "8a7522565b371db96e946ad252a79be662398dce",
+  "working_tree": "Contains pre-existing uncommitted changes; this manifest is not a full snapshot",
+  "pdf": {
+    "path": "output/pdf/Alberring_Technische_Dokumentation_Android_iOS.pdf",
+    "sha256": "ea0e71cdb3d908cc535804a27a729c01785c7ea92f40556dab3814ce8fb28423",
+    "pages": 18
+  },
+  "sections": [
+    {
+      "title": "01 Projekt und Orientierung",
+      "page": 2
+    },
+    {
+      "title": "02 Systemarchitektur",
+      "page": 3
+    },
+    {
+      "title": "03 Technologien und Quellstruktur",
+      "page": 4
+    },
+    {
+      "title": "04 Gemeinsame mobile Oberfläche",
+      "page": 5
+    },
+    {
+      "title": "05 Android-Integration",
+      "page": 6
+    },
+    {
+      "title": "06 Android: belegte Laufzeitzustände",
+      "page": 7
+    },
+    {
+      "title": "07 iOS-Integration",
+      "page": 8
+    },
+    {
+      "title": "08 Anmeldung und sichere Sitzungen",
+      "page": 9
+    },
+    {
+      "title": "09 Berechtigungen im Nutzungskontext",
+      "page": 10
+    },
+    {
+      "title": "10 Kamera, Fotos und Sprachnachrichten",
+      "page": 11
+    },
+    {
+      "title": "11 Standort, Netzwerk und Offlinezustand",
+      "page": 12
+    },
+    {
+      "title": "12 Push-Benachrichtigungen",
+      "page": 13
+    },
+    {
+      "title": "13 Backend und Datenflüsse",
+      "page": 14
+    },
+    {
+      "title": "14 Entwicklungs- und Buildablauf",
+      "page": 15
+    },
+    {
+      "title": "15 Qualitätssicherung und Nachweise",
+      "page": 16
+    },
+    {
+      "title": "16 Release, Wartung und Übergabe",
+      "page": 17
+    },
+    {
+      "title": "17 Quellen- und Abbildungsregister",
+      "page": 18
+    }
+  ],
+  "screenshot_count": 10,
+  "screenshot_evidence_date": "2026-09-17",
+  "current_test": {
+    "command": "npm run test:mobile",
+    "date": "2026-09-28",
+    "files_passed": 6,
+    "tests_passed": 59
+  },
+  "layout_bounds_failures": [],
+  "sources": {
+    ".github/workflows/ci.yml": "b4fd98858565a0342c9040d08d1942366238b1eff3814e26ab6aafcffca58e5b",
+    ".github/workflows/mobile-release.yml": "ff4d87238bbb8b3ee4163ee31edb6d791baaa176182633f7a15161b14def096a",
+    ".github/workflows/native.yml": "d50459e3caf206ca0cdc1ad97af11a46c5d6c16a23ad992ddb4934e050ccbea1",
+    ".github/workflows/web-release.yml": "e25f05e1023a466def04e4e49064e90dfe3c1768975a5ad9543aaca33f34071e",
+    "android/app/build.gradle": "9c30e4eb22efd020fde4ab607081eff8c590106f1ed6681930ebb9ba1c04dc11",
+    "android/app/src/main/AndroidManifest.xml": "b6fbcaf1a214c4b884f81a1c1e0a6eacfa9ed54fb3bd49308057a2d67bee65b1",
+    "android/app/src/main/java/de/alberring/connect/AlberringSecureStoragePlugin.java": "ff96c0bb3a2f534332caf23d41f62e238f02a597421b623f40e6f4093b3576d2",
+    "android/app/src/main/java/de/alberring/connect/AlberringSettingsPlugin.java": "05f6001f890de2e6a0299d3c73597e34c4dced3b83a7103b9ca0da27b1e45200",
+    "android/app/src/main/java/de/alberring/connect/MainActivity.java": "99f4982a43ee544da312c9192936e1ab3f8c8b5f9501c96c52fa05a1fde27e17",
+    "android/variables.gradle": "83d502c9ed8fcf1dd4791482067abeedbebae49fafe9cd14a8a1f5891deb0d88",
+    "capacitor.config.ts": "f5c77cae178882c8f4a78fda8de15bdab30d22be8d7633d099985a416546c31d",
+    "docs/MAILVERSAND_2026-09-24.md": "a0799b9de36afe653ed4dec05f9dbfa26c25e4e6aebc1841774cf93c33b29326",
+    "docs/Technische_Dokumentation_Android_iOS.md": "78811468952f807190efb1f28b013a864c140ac055180b796c530d20baf08739",
+    "docs/evidence/ABSCHLUSSBERICHT.txt": "f449f2109308bb6cce81ce59e491f8cec3b5d4270a8cd1201e6569afe004cdfb",
+    "docs/evidence/NATIVE_NOTES.md": "55f76e15a127b6c4d6d4af9c9cd3cb6f3b675e053352e32dbb4aae10fd3a5e64",
+    "docs/evidence/android-build.txt": "5dd4eec33a20b463faffb3ccd52afc6612bef02adc813a6579cca825a3e2e00f",
+    "docs/evidence/backend-tests.txt": "5111dbcefebb4bf06e4b14139d9d5fb6291b5b58c6ecf3edcdbbe462c01af212",
+    "docs/evidence/frontend-tests.md": "16ffca720647f98cb5e807c3548a0f8440b8797149e1d3b30ec6cf60e81b2be2",
+    "docs/evidence/mobile-adapter-tests_2026-09-28.txt": "55e5d69d7431f8bec8d42f3650bc166b0eb6c2ce01b09724daa2e24b48b1df15",
+    "docs/evidence/mobile-device-flows.json": "6fb7cacac70efb407c71771eb0df3820faf25928cf230ca836c8a5e21ff5b95b",
+    "docs/screenshots/04-mobile-dashboard.png": "699d417a19b2d21ae14a09aaa77e79ebc7964f13f2a9623dd33610823c72aa54",
+    "docs/screenshots/06-mobile-navigation.png": "c48db56ed55a2e81ab1c246a80c3f11a6b23caf163d2eda572c70d92da2340c8",
+    "docs/screenshots/08-permission-status.png": "14af59d1df417d4204777b0742cc7756f9839315b544828113e81a018bdc4dd6",
+    "docs/screenshots/12-android-login.png": "5329cfe03f276d3342e625307aefcf79a1858896a90a69ed4cd45b4541e399c5",
+    "docs/screenshots/13-android-offline.png": "52b6576ed00335f8fe88a9155aabebc1fd892f2bd560144d7001d85ee7dcacea",
+    "docs/screenshots/13-photo-upload.png": "5908438d09415ec510a422fc8fb4592340499c00351d9f86204e4b21cf6dc53c",
+    "docs/screenshots/14-android-keyboard.png": "3750b9771dfaf7791d7a030928ab34689e1a66a908e2aff778849f611280e626",
+    "docs/screenshots/14-audio-recording.png": "e8aabe746e234bd5c7febfe8f97cfead2699de4dbbdcb14215902e0ea5e89028",
+    "docs/screenshots/15-location-draft.png": "fcf7dd154f06c11ac4fcd8adc1d2ea675d90c1fd1b0b7c5450316e5dad5545be",
+    "docs/screenshots/16-android-camera-settings.png": "b0f0e0e151ef32f657ff067d2b17eeae3eefe18d9dec7a91da79efc5fbb5e4ad",
+    "docs/screenshots/NACHWEIS.json": "c6d27fb8a045fd1e813b4fc95e27955b15a18c4d0e2e5c382f3a1b97b8351395",
+    "docs/screenshots/README.md": "df68b3459ee7f04bb4208b98db6ed8e76cf111e363cb70c301dfeda79145e098",
+    "ios/App/App/AlberringBridgeViewController.swift": "29eed3557bd39a05c3b61761a7be397b247ca0bfff443c9b282f68b4c5030f45",
+    "ios/App/App/AlberringSecureStoragePlugin.swift": "892fbdf1e96f62b7101d03a9fbb59fa078ba2df02a52ddd384a0b1add699e892",
+    "ios/App/App/AlberringSettingsPlugin.swift": "d0a0ca7edbe4c68254c8f9546d21debdb171cca9d99207df512fdbb4ba624965",
+    "ios/App/App/AppDelegate.swift": "5cf3c91cde9c79555e8d6ef6b5748720472df887c613b88604aa58963631d146",
+    "ios/App/App/Info.plist": "3b7d988c090aa51fc31fc1cef8669f93a5d9f470bed4962f6d434013d9e43f4c",
+    "ios/App/App/SceneDelegate.swift": "87e1d3c5018e1aad15f948337dd38ef426ec1d17685209207ac71493c17e8136",
+    "ios/App/App.xcodeproj/project.pbxproj": "a36c62b0a6bbd3c171a0793e23250a64ab94a288a715473b60b1b8fac4be8607",
+    "mobile-version.json": "649b136e3c4dbc1eb3d8a82d47dd6ba58a74bd73168626dea8b9719f50a80d34",
+    "package-lock.json": "bcf24bd2408d4a56f07dc3fb2367fd6be84e1240d2bec3094e5b5c544edb5adc",
+    "package.json": "341e4b4d80afd1ea416f7cbb3b1108d5e111a44791f5fe5731de7ef79ea6fd98",
+    "scripts/build-technical-mobile-documentation.py": "bce4d5a4344ae5ec8494007b322f748e5013b278bfefbac34145c4ed0d37eb51",
+    "src/features/auth/AuthProvider.test.tsx": "e1f95d1cbced11b3ec6939918df3a694db68a519c21114668c6dcb8da2327e3f",
+    "src/features/auth/AuthProvider.tsx": "92d1b49bcd343e69db4497a42b434656a0380c5abc000b254a82faab3de28a20",
+    "src/features/auth/AuthScreens.test.tsx": "2d946292ab47fb5385c902a7a44b67453b323f547d7cbdb78ffed2d975986a9b",
+    "src/features/auth/AuthScreens.tsx": "0fcc46c8b8c39fe34556aafa61a44c5e6b49fce003cd465df864bbcb73c7b313",
+    "src/lib/supabase.ts": "f5efd62b773ceff76cc6945a351f5adfce0de04d83fe89082ff3b8fba5ddc9f2",
+    "src/main.tsx": "2ea585064fe0a20b2a12c7e3e1bc665c2ba7a74064358d2fcbb08b61460d8e06",
+    "src/services/platform/audio.ts": "753094c7877c8d6f090ebfcfc157517e2f638e7ada2b718504e85fa50a7eef3c",
+    "src/services/platform/device-services.test.ts": "8687016b0f4cf6840d9de54b39b3792a882592be944d088f2cfdb9174845f3ae",
+    "src/services/platform/index.ts": "a02b1b564833364f6f2c6328842119cbe2298a833c218635a98ae5ffa28919e2",
+    "src/services/platform/links.test.ts": "c1bdda9fd498900615725bcd828194ca7a41aaf2f7faacf7f0b8ef272418a916",
+    "src/services/platform/links.ts": "fa84a35ff825a8b0fbdb4d363c0854d76c51ddf56d81fc1c9d537cc977f4c8f7",
+    "src/services/platform/location.ts": "6107807256ac5b9a6cfdec1cf5e4bfdf71bd45576bbe03ab017f7c37ab50e4ff",
+    "src/services/platform/media.ts": "bf43c7e3129d6eccb1beee68a8478fd346ba03f81c9695b4d5814bdca88bcf5d",
+    "src/services/platform/network.test.ts": "94e3d6b21d55023a19d1cfc477950b4874fbd32a29b7030f64f8a46ab10b30b0",
+    "src/services/platform/network.ts": "99bad1e0e02f7ffbf3246e868f1a97fa95fdd4b2f044f7042bdc2709838b4609",
+    "src/services/platform/permissions.ts": "5420445574c3c5928f2e12b1b10d05669221e89b99958b4dec461790909dd0da",
+    "src/services/platform/push.test.ts": "1d2e8dc6309c104138aeba1eca640dcb3214b732689a0b75ce42679242c51f52",
+    "src/services/platform/push.ts": "0c75281def6843428222448e4b2bda78430dbcdb6580a9d70c3d679a9fc74324",
+    "src/services/platform/storage.test.ts": "f16a22074fdbfabcb98f92a748d72bb139d8fa4b55429c65996879d610f85890",
+    "src/services/platform/storage.ts": "1c990156e52a2e7c70133404b52f040be4ad848b5aef3b5d62407e70e3a475e5",
+    "src/services/platform/uploads.test.ts": "c2dab371f181814386c6fbaa4435db0416e26fc77c1e8bfc8a3f8d562b490a5b",
+    "src/services/platform/uploads.ts": "73c4d658d23e7e51ec6042756281d9e9623680e6bacc8941dedc96bd2c6815c1",
+    "supabase/migrations/20260917073037_native_push_devices_and_audio.sql": "83d0ac6b6f9c410b0b4c845bf79b039536983c8a9062b61096446b93f4785117",
+    "vite.config.ts": "17a9ae00db9dcb1e67511efc689d3f642bb6a75f4219adca2d21f91c41731e74"
+  },
+  "visual_review": {
+    "reviewed_pages": 18,
+    "result": "All rendered pages inspected; no clipping or overlaps observed. Screenshot provenance checked against source register."
+  }
+}

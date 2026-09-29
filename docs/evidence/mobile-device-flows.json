@@ -1,0 +1,29 @@
+{
+  "testedAt": "2026-09-17T08:32:52.787Z",
+  "backend": "local Supabase, no mocked APIs",
+  "viewport": "390x844",
+  "sensorInput": "Synthetic Chromium microphone and browser geolocation, not physical-device proof",
+  "checks": [
+    {
+      "name": "photo",
+      "result": "pass",
+      "detail": "System browser file chooser -> JPEG compression -> real signed upload -> RLS metadata -> signed image download rendered",
+      "mimeType": "image/jpeg",
+      "bytes": 4057
+    },
+    {
+      "name": "audio",
+      "result": "pass",
+      "detail": "Synthetic Chromium microphone -> real MediaRecorder -> reviewable draft -> real Storage and metadata -> signed audio playback",
+      "mimeType": "audio/mp4",
+      "bytes": 17627
+    },
+    {
+      "name": "location",
+      "result": "pass",
+      "detail": "Synthetic browser position with 15 m accuracy is inserted into the real chat draft; database message count remains unchanged until explicit send"
+    }
+  ],
+  "pageErrors": [],
+  "createdLocalTestMessageCount": 2
+}

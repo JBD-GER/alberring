@@ -54,7 +54,7 @@ insert into public.profiles(
   'c2000000-0000-4000-8000-000000000002',
   'c1aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
   '00000000-0000-4000-8000-000000000001',
-  'Normaler Admin','tour-admin@example.test','active'
+  'Weiterer Super Admin','tour-admin@example.test','active'
 ),
 (
   'c2000000-0000-4000-8000-000000000003',
@@ -104,7 +104,7 @@ join public.roles r
   on r.organization_id=p.organization_id
   and r.system_key=case p.email
     when 'info@alberring.de' then 'super_admin'
-    when 'tour-admin@example.test' then 'administration'
+    when 'tour-admin@example.test' then 'super_admin'
     else 'employee'
   end
 where lower(p.email) in (
@@ -169,7 +169,7 @@ select is(
       'tour-admin@example.test','tour-employee@example.test'
     )
       and role.system_key=case profile.email
-        when 'tour-admin@example.test' then 'administration'
+        when 'tour-admin@example.test' then 'super_admin'
         else 'employee'
       end
       and assignment.valid_from<=now()
@@ -179,7 +179,7 @@ select is(
       )
   ),
   2,
-  'Die Gegenproben besitzen tatsächlich aktive Admin- und Mitarbeiterrollen'
+  'Die Gegenproben besitzen tatsächlich aktive Super-Admin- und Mitarbeiterrollen'
 );
 
 set local role authenticated;
@@ -188,15 +188,15 @@ select set_config(
 );
 select is(
   (select required from public.get_my_onboarding_state()),false,
-  'Eine normale Administrationsrolle erhält kein Onboarding'
+  'Ein weiterer Super Admin erhält kein Onboarding'
 );
 select is(
   (select eligible from public.get_my_onboarding_state()),false,
-  'Eine normale Administrationsrolle ist nicht onboarding-berechtigt'
+  'Ein weiterer Super Admin ist nicht onboarding-berechtigt'
 );
 select is(
   (select eligible from public.get_my_product_tour_state()),false,
-  'Eine normale Administrationsrolle erhält keine Produkttour'
+  'Ein weiterer Super Admin erhält keine Produkttour'
 );
 
 select set_config(

@@ -1,11 +1,14 @@
 import { z } from "npm:zod@4.4.3";
 import { corsHeaders, json } from "../_shared/http.ts";
 import {
+  logInvitationFailure,
+  sendInvitationEmail,
+} from "../_shared/invitations.ts";
+import {
   handlerError,
   HttpError,
   preflight,
   requireUser,
-  shouldUseManualEmailLink,
 } from "../_shared/security.ts";
 
 const input = z.object({ profileId: z.uuid() });
@@ -40,6 +43,12 @@ Deno.serve(async (req) => {
       },
     );
     const target = Array.isArray(targets) ? targets[0] : targets;
+    if (targetError?.message.includes("account_operation_in_progress"))
+      throw new HttpError(
+        409,
+        "account_operation_in_progress",
+        "Die E-Mail-Adresse wird gerade geändert. Bitte warten Sie einige Minuten, bevor Sie die Einladung erneut senden.",
+      );
     if (targetError?.message.includes("invite_cooldown"))
       throw new HttpError(
         429,
@@ -59,6 +68,12 @@ Deno.serve(async (req) => {
       await context.admin.auth.admin.getUserById(target.auth_user_id);
     if (authTargetError || !authTarget.user)
       throw authTargetError ?? new Error("auth_user_not_found");
+    if (authTarget.user.email?.toLowerCase() !== target.email.toLowerCase())
+      throw new HttpError(
+        409,
+        "invite_email_mismatch",
+        "Die E-Mail-Adresse des Kontos stimmt nicht überein. Bitte korrigieren Sie zuerst die Mitarbeiteradresse.",
+      );
     const { error: metadataError } =
       await context.admin.auth.admin.updateUserById(target.auth_user_id, {
         app_metadata: {
@@ -67,46 +82,17 @@ Deno.serve(async (req) => {
         },
       });
     if (metadataError) throw metadataError;
-    const generateManualLink = async (type: "invite" | "recovery") => {
-      const { data, error } = await context.admin.auth.admin.generateLink({
-        type,
-        email: target.email,
-        options: { redirectTo },
-      });
-      if (error || !data.properties?.action_link)
-        throw error ?? new Error("invite_link_missing");
-      return data.properties.action_link;
-    };
-    let manualInviteUrl: string | null = null;
-    if (authTarget.user.email_confirmed_at) {
-      // A confirmed Auth user can remain `invited` only when the profile
-      // activation step was interrupted. Recovery establishes a valid session;
-      // AcceptInvite then sets the password and calls activate_my_profile().
-      const { error } = await context.admin.auth.resetPasswordForEmail(
-        target.email,
-        { redirectTo },
-      );
-      if (error) {
-        if (!shouldUseManualEmailLink(error)) throw error;
-        manualInviteUrl = await generateManualLink("recovery");
-      }
-    } else {
-      // Supabase Auth's invite endpoint re-sends for an existing unconfirmed
-      // invite user. It only returns EmailExists after confirmation.
-      const { error } = await context.admin.auth.admin.inviteUserByEmail(
-        target.email,
-        {
-          redirectTo,
-        },
-      );
-      if (error) {
-        if (!shouldUseManualEmailLink(error)) throw error;
-        manualInviteUrl = await generateManualLink("invite");
-      }
-    }
-    const { error: auditError } = await context.admin
-      .from("audit_logs")
-      .insert({
+    const delivery = await sendInvitationEmail(
+      context.admin,
+      target.email,
+      redirectTo,
+      Boolean(authTarget.user.email_confirmed_at),
+      target.auth_user_id,
+    );
+    const { manualInviteUrl } = delivery;
+    let auditError: unknown = null;
+    try {
+      const result = await context.admin.from("audit_logs").insert({
         organization_id: context.organizationId,
         actor_id: context.profileId,
         action: "user.invite_resent",
@@ -114,22 +100,18 @@ Deno.serve(async (req) => {
         entity_id: parsed.data.profileId,
         request_id: requestId,
         metadata: {
-          delivery: manualInviteUrl ? "manual_link" : "email",
+          delivery: delivery.delivery,
         },
       });
+      auditError = result.error;
+    } catch (error) {
+      auditError = error;
+    }
     if (auditError) {
-      console.error(
-        JSON.stringify({
-          requestId,
-          event: "invite_sent_audit_failed",
-          errorCode: auditError.code ?? "audit_failed",
-        }),
-      );
+      logInvitationFailure(requestId, "invite_sent_audit_failed", auditError);
       return json(
         {
-          sent: !manualInviteUrl,
-          delivery: manualInviteUrl ? "manual_link" : "email",
-          manualInviteUrl,
+          ...delivery,
           auditRecorded: false,
           warning: {
             code: manualInviteUrl
@@ -145,23 +127,7 @@ Deno.serve(async (req) => {
         corsHeaders(origin),
       );
     }
-    return json(
-      {
-        sent: !manualInviteUrl,
-        delivery: manualInviteUrl ? "manual_link" : "email",
-        manualInviteUrl,
-        warning: manualInviteUrl
-          ? {
-              code: "manual_invite_link",
-              message:
-                "Der automatische E-Mail-Versand ist nicht verfügbar. Ein neuer, einmaliger Einladungslink wurde erstellt.",
-            }
-          : undefined,
-      },
-      200,
-      requestId,
-      corsHeaders(origin),
-    );
+    return json(delivery, 200, requestId, corsHeaders(origin));
   } catch (error) {
     return handlerError(error, requestId, origin);
   }

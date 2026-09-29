@@ -1,9 +1,16 @@
-import { StrictMode } from "react";
+import { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router/dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./features/auth/AuthProvider";
-import { PwaUpdate } from "./components/common/PwaUpdate";
+import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
+import { NetworkStatus } from "./components/common/NetworkStatus";
+import { PlatformRuntime } from "./components/common/PlatformRuntime";
+const PwaUpdate = lazy(() =>
+  import("./components/common/PwaUpdate").then((m) => ({
+    default: m.PwaUpdate,
+  })),
+);
 import { router } from "./app/router";
 import "./styles/app.css";
 import "./styles/typography.css";
@@ -31,16 +38,28 @@ import "./styles/native-ready.css";
 import "./styles/premium-features.css";
 import "./styles/onboarding.css";
 import "./styles/product-tour.css";
+import "./styles/platform.css";
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  defaultOptions: {
+    queries: { staleTime: 30_000, retry: 1 },
+    mutations: { retry: false, networkMode: "always" },
+  },
 });
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RouterProvider router={router} />
-        <PwaUpdate />
-      </AuthProvider>
+      <AppErrorBoundary>
+        <AuthProvider>
+          <RouterProvider router={router} />
+          <NetworkStatus />
+          <PlatformRuntime />
+          {import.meta.env.MODE !== "native" && (
+            <Suspense fallback={null}>
+              <PwaUpdate />
+            </Suspense>
+          )}
+        </AuthProvider>
+      </AppErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,
 );

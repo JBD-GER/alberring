@@ -1,0 +1,140 @@
+name: Signed mobile release artifacts
+on:
+  push:
+    tags: ["v[0-9]*"]
+    branches: ["codex/ios-review-preparation"]
+    paths:
+      - ".github/workflows/mobile-release.yml"
+      - "scripts/prepare-release-secrets.py"
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build (iOS first; Android can follow separately)
+        required: true
+        type: choice
+        default: ios
+        options: [ios, android, all]
+      build_number:
+        description: Unique positive build number (greater than every previously uploaded build)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: mobile-release
+  cancel-in-progress: false
+# Configure the protected store-release environment and enable this repository
+# variable only after the account/checklist requirements have been completed.
+# This workflow creates signed artifacts; submission is a separate reviewed step.
+env:
+  BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+jobs:
+  quality:
+    if: vars.MOBILE_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: store-release
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_PUSH_ENABLED: ${{ vars.VITE_PUSH_ENABLED }}
+      VITE_PUSH_ENVIRONMENT: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: node scripts/validate-release.mjs
+      - run: npm audit --audit-level=moderate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+      - run: npm run build:native
+      - run: npm run security:check
+  android:
+    needs: quality
+    if: vars.MOBILE_RELEASE_ENABLED == 'true' && ((github.event_name == 'workflow_dispatch' && inputs.platform != 'ios') || github.ref_type == 'tag')
+    runs-on: ubuntu-latest
+    environment: store-release
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_PUSH_ENABLED: ${{ vars.VITE_PUSH_ENABLED }}
+      VITE_PUSH_ENVIRONMENT: production
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Restore protected Android configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: python3 scripts/prepare-release-secrets.py android
+      - run: npm ci
+      - run: node scripts/validate-release.mjs
+      - run: npm run mobile:sync
+      - run: ./gradlew --no-daemon bundleRelease
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alberring-signed-android
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 14
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/alberring-upload.jks" android/app/google-services.json
+  ios:
+    needs: quality
+    if: vars.MOBILE_RELEASE_ENABLED == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform != 'android')
+    runs-on: macos-latest
+    timeout-minutes: 40
+    environment: store-release
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_PUSH_ENABLED: ${{ vars.VITE_PUSH_ENABLED }}
+      VITE_PUSH_ENVIRONMENT: production
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      IOS_PROFILE_NAME: ${{ vars.IOS_PROFILE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - run: node scripts/validate-release.mjs
+      - run: npm run build:native && npm run mobile:version && npx cap sync ios
+      - name: Restore protected Apple signing material
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: python3 scripts/prepare-release-secrets.py ios
+      - name: Archive and export App Store package
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Alberring.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME" archive
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Alberring.xcarchive" \
+            -exportPath mobile-artifacts/ios -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alberring-signed-ios
+          path: mobile-artifacts/ios/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/alberring-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/alberring-distribution.p12" "$RUNNER_TEMP/alberring.mobileprovision"
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/alberring-ci.mobileprovision"
+          rm -f "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/alberring-ci.mobileprovision"

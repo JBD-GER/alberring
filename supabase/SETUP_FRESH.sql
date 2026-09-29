@@ -8462,22 +8462,2223 @@ grant execute on function public.get_admin_onboarding_catalog()
 
 notify pgrst, 'reload schema';
 
+-- ===== supabase/migrations/20260908090936_simplify_roles_teams_and_communication.sql =====
+-- Administration records absences for employees. Super Admin always receives
+-- every effective permission, including permissions introduced in the future.
+insert into public.permissions(key,description) values
+  ('leave.create','Urlaubsanträge für Mitarbeiter anlegen (nur Admin)'),
+  ('leave.view_own','Eigene Urlaubsanträge anzeigen'),
+  ('sick_leave.create','Krankmeldungen für Mitarbeiter anlegen (nur Admin)'),
+  ('sick_leave.view_own','Eigene Krankmeldungen anzeigen')
+on conflict(key) do update set description=excluded.description;
+
+insert into public.role_permissions(role_id,permission_key)
+select role_id,case permission_key when 'leave.create_own' then 'leave.view_own' else 'sick_leave.view_own' end
+from public.role_permissions where permission_key in ('leave.create_own','sick_leave.create_own')
+on conflict do nothing;
+delete from public.role_permissions where permission_key in ('leave.create_own','sick_leave.create_own');
+insert into public.role_permissions(role_id,permission_key)
+select r.id,p.key from public.roles r join public.permissions p on p.key=any(array[
+  'leave.create','leave.view_own','leave.view_team','leave.manage',
+  'sick_leave.create','sick_leave.view_own','sick_leave.view_status','sick_leave.manage'
+]) where r.system_key in ('admin','administration','super_admin') on conflict do nothing;
+
+create or replace function private.has_system_role(p_system_keys text[])
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists (
+    select 1 from public.user_roles ur
+    join public.roles r on r.id=ur.role_id and r.organization_id=ur.organization_id and r.active
+    where ur.profile_id=private.current_profile_id()
+      and ur.organization_id=private.current_organization_id()
+      and r.system_key=any(p_system_keys) and ur.valid_from<=now()
+      and (ur.valid_until is null or ur.valid_until>now())
+  )
+$$;
+revoke all on function private.has_system_role(text[]) from public,anon,authenticated,service_role;
+
+create or replace function private.has_permission(permission_key text)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.permissions p where p.key=$1) and (
+    case when $1 in ('leave.create','sick_leave.create','leave.create_own','sick_leave.create_own')
+      then private.has_system_role(array['admin','administration','super_admin'])
+      else private.has_system_role(array['super_admin']) or exists (
+        select 1 from public.user_roles ur
+        join public.roles r on r.id=ur.role_id and r.organization_id=ur.organization_id and r.active
+        join public.role_permissions rp on rp.role_id=r.id
+        where ur.profile_id=private.current_profile_id()
+          and ur.organization_id=private.current_organization_id()
+          and rp.permission_key=$1 and ur.valid_from<=now()
+          and (ur.valid_until is null or ur.valid_until>now())
+      ) end
+  )
+$$;
+create or replace function public.my_permissions()
+returns table(permission_key text) language sql stable security definer set search_path=pg_catalog,public as $$
+  select p.key from public.permissions p where private.has_permission(p.key)
+$$;
+
+create or replace function private.profile_has_permission(p_profile_id uuid,p_organization_id uuid,p_permission_key text)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.permissions permission where permission.key=p_permission_key)
+    and exists (
+      select 1 from public.profiles p
+      join public.organizations o on o.id=p.organization_id and o.active
+      join public.user_roles ur on ur.profile_id=p.id and ur.organization_id=p.organization_id
+      join public.roles r on r.id=ur.role_id and r.organization_id=p.organization_id and r.active
+      where p.id=p_profile_id and p.organization_id=p_organization_id and p.status='active'
+        and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())
+        and case when p_permission_key in ('leave.create','sick_leave.create','leave.create_own','sick_leave.create_own')
+          then r.system_key in ('admin','administration','super_admin')
+          else r.system_key='super_admin' or exists(
+            select 1 from public.role_permissions rp where rp.role_id=r.id and rp.permission_key=p_permission_key
+          ) end
+    )
+$$;
+
+create or replace function private.can_delegate_role(p_role_id uuid)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.roles r
+    where r.id=p_role_id and r.organization_id=private.current_organization_id() and r.active
+      and (r.system_key is distinct from 'super_admin' or private.has_system_role(array['super_admin']))
+      and (coalesce(r.system_key,'') not in ('admin','administration') or private.has_system_role(array['admin','administration','super_admin']))
+      and (private.has_permission('roles.manage') or not exists(
+        select 1 from public.role_permissions rp where rp.role_id=r.id
+          and not private.has_permission(rp.permission_key)
+          and not(r.system_key is not distinct from 'employee' and rp.permission_key=any(array[
+            'dashboard.view','directory.view','messages.use','news.view',
+            'schedule.view_own','leave.view_own','sick_leave.view_own',
+            'leave.create_own','sick_leave.create_own','documents.view_own','documents.view_shared',
+            'documents.view_folders','fleet.view_own','mileage.submit_own','materials.create_own'
+          ]))
+      ))
+  )
+$$;
+
+create or replace function private.create_leave_request_for_user(
+  p_profile_id uuid,
+  p_leave_type text,
+  p_starts_on date,
+  p_ends_on date,
+  p_day_fraction numeric,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); result uuid; days numeric; type_id uuid; steps integer; note_required boolean;
+begin
+  if me is null or not private.has_permission('leave.create') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if not exists(select 1 from public.profiles p where p.id=p_profile_id and p.organization_id=org and p.status='active') then raise exception 'profile_not_available' using errcode='22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('leave:'||p_profile_id::text,0));
+  if length(coalesce(p_note,''))>500 then raise exception 'note_too_long' using errcode='22023'; end if;
+  select id,requires_note into type_id,note_required from public.leave_types where organization_id=org and active and (code=p_leave_type or name=p_leave_type) limit 1;
+  if type_id is null then raise exception 'leave_type_not_available' using errcode='22023'; end if;
+  if note_required and nullif(trim(coalesce(p_note,'')),'') is null then raise exception 'note_required' using errcode='22023'; end if;
+  days:=private.calculate_leave_workdays(p_profile_id,p_starts_on,p_ends_on,p_day_fraction);
+  if days<=0 then raise exception 'no_workdays_in_period' using errcode='22023'; end if;
+  if exists (select 1 from public.leave_requests lr where lr.profile_id=p_profile_id and lr.status in ('submitted','review','approved')
+    and daterange(lr.starts_on,lr.ends_on,'[]') && daterange(p_starts_on,p_ends_on,'[]')) then
+    raise exception 'overlapping_leave_request' using errcode='23P01';
+  end if;
+  insert into public.leave_requests(organization_id,profile_id,leave_type,leave_type_id,starts_on,ends_on,day_fraction,workdays,note,status)
+  values(org,p_profile_id,p_leave_type,type_id,p_starts_on,p_ends_on,p_day_fraction,days,nullif(trim(p_note),''),'submitted') returning id into result;
+  select leave_approval_steps into steps from public.organization_settings where organization_id=org;
+  insert into public.leave_approval_steps(organization_id,leave_request_id,step_number)
+  select org,result,n from generate_series(1,coalesce(steps,1)) n;
+  perform private.create_notification(org,p.id,'leave_approval','Neuer Urlaubsantrag','Ein Urlaubsantrag wartet auf Bearbeitung.',
+    '/app/leave','leave-task:'||result::text||':'||p.id::text)
+  from public.profiles p where p.organization_id=org and p.status='active' and p.id<>me
+    and (
+      private.profile_has_permission(p.id,org,'leave.manage')
+      or (
+        private.profile_has_permission(p.id,org,'leave.approve')
+        and exists (
+          select 1 from public.team_memberships subject_tm
+          join public.teams t on t.id=subject_tm.team_id and t.organization_id=subject_tm.organization_id and t.active
+          where subject_tm.profile_id=p_profile_id and subject_tm.organization_id=org
+            and subject_tm.valid_from<=current_date and (subject_tm.valid_until is null or subject_tm.valid_until>=current_date)
+            and (
+              t.lead_profile_id=p.id
+              or exists(select 1 from public.team_memberships viewer_tm where viewer_tm.team_id=subject_tm.team_id
+                and viewer_tm.profile_id=p.id and viewer_tm.organization_id=org
+                and viewer_tm.valid_from<=current_date and (viewer_tm.valid_until is null or viewer_tm.valid_until>=current_date))
+            )
+        )
+      )
+    );
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'leave.submitted','leave_request',result,jsonb_build_object('workdays',days,'profile_id',p_profile_id));
+  return result;
+end;
+$$;
+revoke all on function private.create_leave_request_for_user(uuid,text,date,date,numeric,text) from public,anon,authenticated,service_role;
+create or replace function public.create_leave_request_for_user(
+  p_profile_id uuid,
+  p_leave_type text,
+  p_starts_on date,
+  p_ends_on date,
+  p_day_fraction numeric,
+  p_note text default null
+)
+returns uuid
+language sql security definer set search_path=pg_catalog,public as $$
+  select private.create_leave_request_for_user(p_profile_id,p_leave_type,p_starts_on,p_ends_on,p_day_fraction,p_note)
+$$;
+
+
+create or replace function private.report_sick_leave_for_user(
+  p_profile_id uuid,
+  p_starts_on date,
+  p_expected_end_on date,
+  p_end_unknown boolean,
+  p_certificate_status text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); result uuid;
+begin
+  if me is null or not private.has_permission('sick_leave.create') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if not exists(select 1 from public.profiles p where p.id=p_profile_id and p.organization_id=org and p.status='active') then raise exception 'profile_not_available' using errcode='22023'; end if;
+  if p_starts_on is null or p_end_unknown is null or p_certificate_status is null then raise exception 'invalid_input' using errcode='22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('sick:'||p_profile_id::text,0));
+  if p_starts_on<current_date-interval '14 days' or p_starts_on>current_date+interval '1 day' then raise exception 'invalid_start_date' using errcode='22023'; end if;
+  if p_certificate_status not in ('not_required','required','pending') then raise exception 'invalid_certificate_status' using errcode='22023'; end if;
+  if (p_end_unknown and p_expected_end_on is not null) or (not p_end_unknown and (p_expected_end_on is null or p_expected_end_on<p_starts_on)) then
+    raise exception 'invalid_end_date' using errcode='22023';
+  end if;
+  if exists(select 1 from public.sick_leave_records sl where sl.profile_id=p_profile_id and sl.status not in ('closed','cancelled')
+    and daterange(sl.starts_on,coalesce(sl.expected_end_on,'infinity'::date),'[]') && daterange(p_starts_on,coalesce(p_expected_end_on,'infinity'::date),'[]')) then
+    raise exception 'overlapping_sick_leave' using errcode='23P01';
+  end if;
+  insert into public.sick_leave_records(organization_id,profile_id,starts_on,expected_end_on,end_unknown,certificate_status,certificate_required,employee_confirmation,status)
+  values(org,p_profile_id,p_starts_on,p_expected_end_on,p_end_unknown,p_certificate_status,p_certificate_status in ('required','pending'),p_profile_id=me,'reported') returning id into result;
+  perform private.create_notification(org,p.id,'sick_leave','Neue Abwesenheitsmeldung','Eine neue Abwesenheitsmeldung ist eingegangen.',
+    '/app/sick-leave','sick-task:'||result::text||':'||p.id::text)
+  from public.profiles p where p.organization_id=org and p.status='active' and p.id<>me
+    and private.profile_can_view_sick_status(p.id,p_profile_id,org);
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'sick_leave.reported','sick_leave',result,jsonb_build_object('certificate_expected',p_certificate_status<>'not_required','profile_id',p_profile_id));
+  return result;
+end;
+$$;
+revoke all on function private.report_sick_leave_for_user(uuid,date,date,boolean,text) from public,anon,authenticated,service_role;
+create or replace function public.report_sick_leave_for_user(
+  p_profile_id uuid,
+  p_starts_on date,
+  p_expected_end_on date,
+  p_end_unknown boolean,
+  p_certificate_status text
+)
+returns uuid
+language sql security definer set search_path=pg_catalog,public as $$
+  select private.report_sick_leave_for_user(p_profile_id,p_starts_on,p_expected_end_on,p_end_unknown,p_certificate_status)
+$$;
+
+
+-- Keep the original clients compatible, with the same administrator-only guard.
+create or replace function public.submit_leave_request(
+  p_leave_type text,p_starts_on date,p_ends_on date,p_day_fraction numeric,p_note text default null
+) returns uuid language sql security definer set search_path=pg_catalog,public as $$
+  select public.create_leave_request_for_user(private.current_profile_id(),p_leave_type,p_starts_on,p_ends_on,p_day_fraction,p_note)
+$$;
+create or replace function public.report_sick_leave(
+  p_starts_on date,p_expected_end_on date,p_end_unknown boolean,p_certificate_status text
+) returns uuid language sql security definer set search_path=pg_catalog,public as $$
+  select public.report_sick_leave_for_user(private.current_profile_id(),p_starts_on,p_expected_end_on,p_end_unknown,p_certificate_status)
+$$;
+
+-- Save the complete role selection in one transaction so intermediate changes
+-- never strand an account without the roles the administrator selected.
+create or replace function private.set_user_roles(p_profile_id uuid,p_role_ids uuid[])
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  selected_ids uuid[]; removed_super boolean; target_super boolean;
+begin
+  if me is null or not private.has_permission('users.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  if p_profile_id=me and not private.has_system_role(array['super_admin']) then raise exception 'cannot_change_own_roles' using errcode='42501'; end if;
+  if not private.is_same_org_profile(p_profile_id) then raise exception 'profile_not_available' using errcode='22023'; end if;
+  if p_role_ids is null or array_position(p_role_ids,null) is not null then raise exception 'invalid_role_selection' using errcode='22023'; end if;
+  select coalesce(array_agg(distinct id),'{}'::uuid[]) into selected_ids from unnest(p_role_ids) ids(id);
+  if exists(select 1 from unnest(selected_ids) ids(id) where not exists(
+    select 1 from public.roles r where r.id=ids.id and r.organization_id=org and r.active
+  )) then raise exception 'role_not_available' using errcode='22023'; end if;
+  if exists(select 1 from unnest(selected_ids) ids(id) where not private.can_delegate_role(ids.id)) then raise exception 'role_delegation_not_allowed' using errcode='42501'; end if;
+  select exists(select 1 from public.user_roles ur join public.roles r on r.id=ur.role_id and r.organization_id=ur.organization_id
+    where ur.profile_id=p_profile_id and ur.organization_id=org and r.active and r.system_key='super_admin'
+      and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())) into target_super;
+  removed_super:=target_super and not exists(select 1 from public.roles r where r.id=any(selected_ids) and r.system_key='super_admin');
+  if (removed_super or exists(select 1 from public.roles r where r.id=any(selected_ids) and r.system_key='super_admin'))
+    and not private.has_system_role(array['super_admin']) then
+    raise exception 'super_admin_assignment_requires_role_management' using errcode='42501';
+  end if;
+  if removed_super and not exists(
+    select 1 from public.user_roles ur join public.roles r on r.id=ur.role_id and r.organization_id=ur.organization_id and r.active
+    join public.profiles p on p.id=ur.profile_id and p.organization_id=org and p.status='active'
+    where ur.organization_id=org and ur.profile_id<>p_profile_id and r.system_key='super_admin'
+      and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())
+  ) then raise exception 'last_super_admin_role_cannot_be_removed' using errcode='42501'; end if;
+  -- Apply additions first so the actor retains authority while updating self.
+  insert into public.user_roles(profile_id,role_id,organization_id,assigned_by)
+  select p_profile_id,id,org,me from unnest(selected_ids) ids(id) where not exists(
+    select 1 from public.user_roles ur where ur.profile_id=p_profile_id and ur.role_id=ids.id
+      and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())
+  ) on conflict(profile_id,role_id,valid_from) do update set valid_until=null,assigned_by=excluded.assigned_by;
+  -- Rows created and removed within this transaction never formed a historical assignment.
+  delete from public.user_roles where profile_id=p_profile_id and organization_id=org
+    and not(role_id=any(selected_ids)) and valid_from=now();
+  update public.user_roles set valid_until=now()
+  where profile_id=p_profile_id and organization_id=org and not(role_id=any(selected_ids))
+    and valid_from<=now() and (valid_until is null or valid_until>now());
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'user.roles_updated','profile',p_profile_id,jsonb_build_object('role_ids',selected_ids));
+end $$;
+revoke all on function private.set_user_roles(uuid,uuid[]) from public,anon,authenticated,service_role;
+create or replace function public.set_user_roles(p_profile_id uuid,p_role_ids uuid[])
+returns void language sql security definer set search_path=pg_catalog,public as $$
+  select private.set_user_roles(p_profile_id,p_role_ids)
+$$;
+
+
+create or replace function public.set_user_role(p_profile_id uuid,p_role_id uuid,p_enabled boolean)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare org uuid:=private.current_organization_id(); selected_ids uuid[];
+begin
+  if private.current_profile_id() is null or not private.has_permission('users.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_enabled is null then raise exception 'invalid_boolean' using errcode='22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  if not exists(select 1 from public.roles r where r.id=p_role_id and r.organization_id=org and r.active) then raise exception 'role_not_available' using errcode='22023'; end if;
+  select coalesce(array_agg(ur.role_id),'{}'::uuid[]) into selected_ids from public.user_roles ur
+  join public.roles r on r.id=ur.role_id and r.organization_id=org and r.active
+  where ur.profile_id=p_profile_id and ur.organization_id=org and ur.valid_from<=now()
+    and (ur.valid_until is null or ur.valid_until>now()) and ur.role_id<>p_role_id;
+  perform public.set_user_roles(p_profile_id,case when p_enabled then array_append(selected_ids,p_role_id) else selected_ids end);
+end $$;
+
+-- Team selections include invited colleagues and retain existing suspended
+-- members until an administrator explicitly removes them.
+create or replace function private.admin_list_team_members()
+returns table(id uuid,display_name text,email text,status text,team_ids uuid[])
+language plpgsql stable security definer set search_path=pg_catalog,public as $$
+declare org uuid:=private.current_organization_id();
+begin
+  if private.current_profile_id() is null or not(private.has_permission('teams.manage') or private.has_permission('users.manage')) then raise exception 'permission_denied' using errcode='42501'; end if;
+  return query select p.id,p.display_name,p.email,p.status,array(
+    select distinct tm.team_id from public.team_memberships tm join public.teams t on t.id=tm.team_id and t.organization_id=org
+    where tm.profile_id=p.id and tm.organization_id=org and tm.valid_from<=current_date and (tm.valid_until is null or tm.valid_until>=current_date)
+  ) from public.profiles p where p.organization_id=org and p.status<>'archived' order by p.display_name,p.id;
+end $$;
+revoke all on function private.admin_list_team_members() from public,anon,authenticated,service_role;
+create or replace function public.admin_list_team_members()
+returns table(id uuid,display_name text,email text,status text,team_ids uuid[])
+language sql security definer set search_path=pg_catalog,public as $$
+  select * from private.admin_list_team_members()
+$$;
+
+
+create or replace function private.set_team_members(p_team_id uuid,p_member_ids uuid[])
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); selected_ids uuid[];
+begin
+  if me is null or not(private.has_permission('teams.manage') or private.has_permission('users.manage')) then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform 1 from public.teams t where t.id=p_team_id and t.organization_id=org and t.active for update;
+  if not found then raise exception 'team_not_available' using errcode='22023'; end if;
+  if p_member_ids is null or array_position(p_member_ids,null) is not null then raise exception 'invalid_member_selection' using errcode='22023'; end if;
+  select coalesce(array_agg(distinct id),'{}'::uuid[]) into selected_ids from unnest(p_member_ids) ids(id);
+  if exists(select 1 from unnest(selected_ids) ids(id) where not exists(
+    select 1 from public.profiles p where p.id=ids.id and p.organization_id=org and (
+      p.status in ('active','invited') or (p.status='suspended' and private.is_team_member(p_team_id,p.id))
+    )
+  )) then raise exception 'member_not_available' using errcode='22023'; end if;
+  delete from public.team_memberships where team_id=p_team_id and organization_id=org
+    and not(profile_id=any(selected_ids)) and valid_from>=current_date;
+  update public.team_memberships set valid_until=current_date-1
+  where team_id=p_team_id and organization_id=org and not(profile_id=any(selected_ids))
+    and valid_from<current_date and (valid_until is null or valid_until>=current_date);
+  insert into public.team_memberships(team_id,profile_id,organization_id,valid_from)
+  select p_team_id,id,org,current_date from unnest(selected_ids) ids(id) where not private.is_team_member(p_team_id,id)
+  on conflict(team_id,profile_id,valid_from) do update set valid_until=null;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'team.members_updated','team',p_team_id,jsonb_build_object('member_ids',selected_ids));
+end $$;
+revoke all on function private.set_team_members(uuid,uuid[]) from public,anon,authenticated,service_role;
+create or replace function public.set_team_members(p_team_id uuid,p_member_ids uuid[])
+returns void language sql security definer set search_path=pg_catalog,public as $$
+  select private.set_team_members(p_team_id,p_member_ids)
+$$;
+
+
+create or replace function private.create_team(p_name text,p_location_name text,p_member_ids uuid[])
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); result uuid;
+begin
+  if me is null or not private.has_permission('teams.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_name is null or length(trim(p_name)) not between 2 and 100 or length(coalesce(p_location_name,''))>100 then raise exception 'invalid_name' using errcode='22023'; end if;
+  insert into public.teams(organization_id,name,location_name) values(org,trim(p_name),nullif(trim(p_location_name),'')) returning id into result;
+  perform public.set_team_members(result,p_member_ids);
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'team.created','team',result,'{}');
+  return result;
+end $$;
+revoke all on function private.create_team(text,text,uuid[]) from public,anon,authenticated,service_role;
+create or replace function public.create_team(p_name text,p_location_name text,p_member_ids uuid[])
+returns uuid language sql security definer set search_path=pg_catalog,public as $$
+  select private.create_team(p_name,p_location_name,p_member_ids)
+$$;
+
+
+-- Team membership and conversation membership remain independent so a team
+-- conversation can also include substitutes or administrative colleagues.
+alter table public.conversations add column if not exists avatar_path text;
+create or replace function private.can_manage_conversation(p_conversation_id uuid)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.conversations c
+    where c.id=p_conversation_id and c.organization_id=private.current_organization_id()
+      and c.type in ('group','team','announcement') and c.archived_at is null
+      and private.has_permission('messages.use') and (
+        private.has_system_role(array['super_admin']) or (
+          private.is_conversation_member(c.id) and (
+            c.created_by=private.current_profile_id()
+            or private.has_permission('teams.manage') or private.has_permission('messages.moderate')
+            or exists(select 1 from public.teams t where t.id=c.team_id and t.organization_id=c.organization_id and t.active and t.lead_profile_id=private.current_profile_id())
+          )
+        )
+      )
+  )
+$$;
+revoke all on function private.can_manage_conversation(uuid) from public,anon,authenticated,service_role;
+grant execute on function private.can_manage_conversation(uuid) to authenticated;
+create or replace function public.can_manage_conversation(p_conversation_id uuid)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select private.can_manage_conversation(p_conversation_id)
+$$;
+
+create or replace function private.set_conversation_members(p_conversation_id uuid,p_member_ids uuid[])
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); selected_ids uuid[];
+begin
+  if me is null then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform 1 from public.conversations c where c.id=p_conversation_id and c.organization_id=org for update;
+  if not private.can_manage_conversation(p_conversation_id) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_member_ids is null or array_position(p_member_ids,null) is not null then raise exception 'invalid_member_selection' using errcode='22023'; end if;
+  select coalesce(array_agg(distinct id),'{}'::uuid[]) into selected_ids from unnest(p_member_ids) ids(id);
+  if cardinality(selected_ids)=0 then raise exception 'conversation_requires_members' using errcode='22023'; end if;
+  if not private.has_system_role(array['super_admin']) and not(me=any(selected_ids)) then
+    raise exception 'conversation_manager_required' using errcode='22023';
+  end if;
+  if exists(select 1 from unnest(selected_ids) ids(id) where not exists(
+    select 1 from public.profiles p where p.id=ids.id and p.organization_id=org and (
+      p.status='active' or (p.status in ('invited','suspended') and exists(
+        select 1 from public.conversation_members cm where cm.conversation_id=p_conversation_id and cm.profile_id=p.id and cm.organization_id=org
+      ))
+    )
+  )) then raise exception 'member_not_available' using errcode='22023'; end if;
+  delete from public.conversation_members where conversation_id=p_conversation_id and organization_id=org and not(profile_id=any(selected_ids));
+  insert into public.conversation_members(conversation_id,profile_id,organization_id)
+  select p_conversation_id,id,org from unnest(selected_ids) ids(id) on conflict(conversation_id,profile_id) do nothing;
+  update public.conversations set updated_at=now() where id=p_conversation_id;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'conversation.members_updated','conversation',p_conversation_id,jsonb_build_object('member_ids',selected_ids));
+end $$;
+revoke all on function private.set_conversation_members(uuid,uuid[]) from public,anon,authenticated,service_role;
+create or replace function public.set_conversation_members(p_conversation_id uuid,p_member_ids uuid[])
+returns void language sql security definer set search_path=pg_catalog,public as $$
+  select private.set_conversation_members(p_conversation_id,p_member_ids)
+$$;
+
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+values('conversation-avatars','conversation-avatars',false,5242880,array['image/jpeg','image/png','image/webp','image/gif'])
+on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+
+create or replace function private.conversation_avatar_access(p_path text,p_manage boolean,p_unreferenced boolean default false)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.conversations c
+    where c.organization_id=private.current_organization_id() and c.archived_at is null
+      and array_length(storage.foldername(p_path),1)=2
+      and (storage.foldername(p_path))[1]=c.organization_id::text
+      and (storage.foldername(p_path))[2]=c.id::text
+      and case when p_manage then private.can_manage_conversation(c.id)
+        else private.is_conversation_member(c.id) or private.can_manage_conversation(c.id) end
+      and (not p_unreferenced or c.avatar_path is distinct from p_path)
+  )
+$$;
+revoke all on function private.conversation_avatar_access(text,boolean,boolean) from public,anon,authenticated,service_role;
+grant execute on function private.conversation_avatar_access(text,boolean,boolean) to authenticated;
+create policy conversation_avatars_read on storage.objects for select to authenticated using(
+  bucket_id='conversation-avatars' and private.conversation_avatar_access(name,false)
+);
+create policy conversation_avatars_insert on storage.objects for insert to authenticated with check(
+  bucket_id='conversation-avatars' and private.conversation_avatar_access(name,true)
+);
+create policy conversation_avatars_delete on storage.objects for delete to authenticated using(
+  bucket_id='conversation-avatars' and private.conversation_avatar_access(name,true,true)
+);
+
+create or replace function private.set_conversation_avatar(p_conversation_id uuid,p_storage_path text)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if me is null then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform 1 from public.conversations c where c.id=p_conversation_id and c.organization_id=org for update;
+  if not private.can_manage_conversation(p_conversation_id) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_storage_path is not null and (
+    array_length(storage.foldername(p_storage_path),1) is distinct from 2
+    or (storage.foldername(p_storage_path))[1] is distinct from org::text
+    or (storage.foldername(p_storage_path))[2] is distinct from p_conversation_id::text
+    or not exists(select 1 from storage.objects o where o.bucket_id='conversation-avatars' and o.name=p_storage_path)
+  ) then raise exception 'avatar_not_available' using errcode='22023'; end if;
+  update public.conversations set avatar_path=p_storage_path,updated_at=now() where id=p_conversation_id;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'conversation.avatar_updated','conversation',p_conversation_id,jsonb_build_object('has_avatar',p_storage_path is not null));
+end $$;
+revoke all on function private.set_conversation_avatar(uuid,text) from public,anon,authenticated,service_role;
+create or replace function public.set_conversation_avatar(p_conversation_id uuid,p_storage_path text)
+returns void language sql security definer set search_path=pg_catalog,public as $$
+  select private.set_conversation_avatar(p_conversation_id,p_storage_path)
+$$;
+
+
+-- Extend the list response for avatars and management controls.
+drop function public.list_conversations();
+create or replace function public.list_conversations()
+returns table(
+  id uuid,
+  type text,
+  name text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  conversation_members jsonb,
+  messages jsonb,
+  last_message jsonb,
+  unread_count bigint,
+  muted_until timestamptz,
+  avatar_path text,
+  created_by uuid,
+  team_id uuid,
+  can_manage boolean
+)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if me is null or not private.has_permission('messages.use') then raise exception 'permission_denied' using errcode='42501'; end if;
+  return query
+  select c.id,c.type,c.name,c.created_at,c.updated_at,
+    coalesce(member_rows.members,'[]'::jsonb),
+    case when latest.id is null then '[]'::jsonb else jsonb_build_array(jsonb_build_object(
+      'id',latest.id,'body',latest.body,'created_at',latest.created_at,
+      'sender_id',latest.sender_id,'retracted_at',latest.retracted_at
+    )) end,
+    case when latest.id is null then null else jsonb_build_object(
+      'id',latest.id,'body',latest.body,'created_at',latest.created_at,
+      'sender_id',latest.sender_id,'retracted_at',latest.retracted_at
+    ) end,
+    (select count(*)
+      from public.messages unread
+      where unread.conversation_id=c.id and unread.sender_id<>me and unread.created_at>=self_member.joined_at
+        and not exists(select 1 from public.message_read_receipts rr where rr.message_id=unread.id and rr.profile_id=me)
+    )::bigint,
+    self_member.muted_until,c.avatar_path,c.created_by,c.team_id,private.can_manage_conversation(c.id)
+  from public.conversation_members self_member
+  join public.conversations c on c.id=self_member.conversation_id and c.organization_id=self_member.organization_id
+  left join lateral (
+    select jsonb_agg(jsonb_build_object(
+      'profile_id',cm.profile_id,
+      'profiles',jsonb_build_object('display_name',p.display_name)
+    ) order by p.display_name,cm.profile_id) members
+    from public.conversation_members cm join public.profiles p on p.id=cm.profile_id and p.organization_id=cm.organization_id
+    where cm.conversation_id=c.id and cm.organization_id=org
+  ) member_rows on true
+  left join lateral (
+    select m.id,m.body,m.created_at,m.sender_id,m.retracted_at
+    from public.messages m where m.conversation_id=c.id
+    order by m.created_at desc,m.id desc limit 1
+  ) latest on true
+  where self_member.profile_id=me and self_member.organization_id=org and c.archived_at is null
+  order by c.updated_at desc,c.created_at desc;
+end;
+$$;
+
+create or replace function public.create_group_conversation(
+  p_name text,
+  p_member_ids uuid[],
+  p_type text default 'group',
+  p_team_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  me uuid := private.current_profile_id(); org uuid := private.current_organization_id(); result uuid;
+begin
+  if me is null or not private.has_permission('messages.use') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_type is null or p_type not in ('group','team','announcement') then raise exception 'invalid_conversation_type' using errcode='22023'; end if;
+  if p_name is null or length(trim(p_name)) not between 2 and 100 then raise exception 'invalid_name' using errcode='22023'; end if;
+  if p_type='announcement' and not private.has_permission('news.publish') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_type='team' and (p_team_id is null or not exists(select 1 from public.teams t where t.id=p_team_id and t.organization_id=org and t.active)) then
+    raise exception 'valid_team_required' using errcode='22023';
+  end if;
+  if p_type='team' and not (
+    private.has_permission('teams.manage')
+    or exists(select 1 from public.teams t where t.id=p_team_id and t.organization_id=org and t.lead_profile_id=me and t.active)
+  ) then raise exception 'team_conversation_permission_required' using errcode='42501'; end if;
+  if p_type<>'team' and p_team_id is not null then raise exception 'team_not_allowed' using errcode='22023'; end if;
+  if exists (select 1 from unnest(coalesce(p_member_ids,'{}'::uuid[])) as member_ids(mid) where not exists(select 1 from public.profiles p where p.id=mid and p.organization_id=org and p.status='active')) then
+    raise exception 'member_not_available' using errcode='22023';
+  end if;
+  insert into public.conversations(organization_id,type,name,team_id,created_by,posting_restricted)
+  values(org,p_type,trim(p_name),p_team_id,me,p_type='announcement') returning id into result;
+  insert into public.conversation_members(conversation_id,profile_id,organization_id)
+  select result,member_id,org from (
+    select distinct unnest(array_append(coalesce(p_member_ids,'{}'::uuid[]),me)) as member_id
+  ) members;
+  perform private.create_notification(org,cm.profile_id,'message','Neue interne Unterhaltung',
+    'Sie wurden zu einer internen Unterhaltung hinzugefügt.','/app/messages/'||result::text,
+    'conversation-created:'||result::text||':'||cm.profile_id::text)
+  from public.conversation_members cm
+  where cm.conversation_id=result and cm.profile_id<>me
+    and private.profile_has_permission(cm.profile_id,org,'messages.use');
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'conversation.group_created','conversation',result,jsonb_build_object('type',p_type));
+  return result;
+end;
+$$;
+
+create or replace function public.set_role_permission(
+  p_role_id uuid,
+  p_permission_key text,
+  p_enabled boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  me uuid:=private.current_profile_id();
+  org uuid:=private.current_organization_id();
+  role_key text;
+  changed integer:=0;
+begin
+  if p_enabled is null then
+    raise exception 'invalid_boolean' using errcode='22023';
+  end if;
+  if me is null or not private.has_permission('roles.manage') then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended('super-admin:'||org::text,0)
+  );
+  select r.system_key into role_key
+  from public.roles r
+  where r.id=p_role_id and r.organization_id=org and r.active
+  for update;
+  if not found then
+    raise exception 'role_not_available' using errcode='22023';
+  end if;
+  if not exists (
+    select 1 from public.permissions p where p.key=p_permission_key
+  ) then
+    raise exception 'permission_not_available' using errcode='22023';
+  end if;
+  if p_permission_key in ('leave.create','sick_leave.create','leave.create_own','sick_leave.create_own') then
+    raise exception 'admin_only_permission' using errcode='42501';
+  end if;
+  if role_key='super_admin'
+    and not p_enabled
+    and p_permission_key in ('users.manage','roles.manage') then
+    raise exception 'protected_super_admin_permission' using errcode='42501';
+  end if;
+  if p_enabled then
+    insert into public.role_permissions(role_id,permission_key)
+    values(p_role_id,p_permission_key)
+    on conflict do nothing;
+    get diagnostics changed=row_count;
+  else
+    delete from public.role_permissions
+    where role_id=p_role_id and permission_key=p_permission_key;
+    get diagnostics changed=row_count;
+  end if;
+  if changed>0 then
+    insert into public.audit_logs(
+      organization_id,actor_id,action,entity_type,entity_id,metadata
+    ) values(
+      org,me,
+      case
+        when p_enabled then 'role.permission_granted'
+        else 'role.permission_revoked'
+      end,
+      'role',p_role_id,
+      jsonb_build_object('permission_key',p_permission_key)
+    );
+  end if;
+end;
+$$;
+
+-- All writes go through the authorized, audited workflows.
+revoke insert,update,delete on public.conversations,public.conversation_members from authenticated;
+revoke insert on public.teams from authenticated;
+
+-- New RPCs are explicitly exposed only to signed-in users. Replaced RPCs keep
+-- their previous grants unless they were recreated above.
+revoke all on function public.create_leave_request_for_user(uuid,text,date,date,numeric,text) from public,anon,authenticated,service_role;
+grant execute on function public.create_leave_request_for_user(uuid,text,date,date,numeric,text) to authenticated;
+revoke all on function public.report_sick_leave_for_user(uuid,date,date,boolean,text) from public,anon,authenticated,service_role;
+grant execute on function public.report_sick_leave_for_user(uuid,date,date,boolean,text) to authenticated;
+revoke all on function public.set_user_roles(uuid,uuid[]) from public,anon,authenticated,service_role;
+grant execute on function public.set_user_roles(uuid,uuid[]) to authenticated;
+revoke all on function public.admin_list_team_members() from public,anon,authenticated,service_role;
+grant execute on function public.admin_list_team_members() to authenticated;
+revoke all on function public.set_team_members(uuid,uuid[]) from public,anon,authenticated,service_role;
+grant execute on function public.set_team_members(uuid,uuid[]) to authenticated;
+revoke all on function public.create_team(text,text,uuid[]) from public,anon,authenticated,service_role;
+grant execute on function public.create_team(text,text,uuid[]) to authenticated;
+revoke all on function public.can_manage_conversation(uuid) from public,anon,authenticated,service_role;
+grant execute on function public.can_manage_conversation(uuid) to authenticated;
+revoke all on function public.set_conversation_members(uuid,uuid[]) from public,anon,authenticated,service_role;
+grant execute on function public.set_conversation_members(uuid,uuid[]) to authenticated;
+revoke all on function public.set_conversation_avatar(uuid,text) from public,anon,authenticated,service_role;
+grant execute on function public.set_conversation_avatar(uuid,text) to authenticated;
+revoke all on function public.list_conversations() from public,anon,authenticated,service_role;
+grant execute on function public.list_conversations() to authenticated;
+
+-- ===== supabase/migrations/20260916073726_delete_unused_invited_users.sql =====
+-- Only mistaken, unused invitations may be removed. Profiles and Auth users
+-- are deleted in one transaction; failures retain both and all audit history.
+create or replace function private.delete_unused_invited_user(p_profile_id uuid, p_request_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  me uuid := private.current_profile_id();
+  org uuid := private.current_organization_id();
+  target public.profiles%rowtype;
+  auth_target auth.users%rowtype;
+  reference record;
+  has_history boolean;
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage') then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if p_profile_id=me then
+    raise exception 'cannot_delete_own_account' using errcode='42501';
+  end if;
+  -- Use the same organization lock as role and status changes.
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  select p.* into target from public.profiles p
+    where p.id=p_profile_id and p.organization_id=org for update;
+  if target.id is null then raise exception 'profile_not_found' using errcode='P0002'; end if;
+  if target.status<>'invited' then
+    raise exception 'only_unused_invitation_can_be_deleted' using errcode='22023';
+  end if;
+  -- Resend releases its profile lock before contacting Auth. Avoid deleting
+  -- during that delivery: inviteUserByEmail could recreate an orphaned account.
+  -- Ten minutes exceeds the hosted Edge Function maximum request lifetime.
+  if exists(select 1 from public.audit_logs started
+    where started.entity_id=target.id and started.organization_id=org
+      and started.action='user.invite_resend_started'
+      and started.created_at>now()-interval '10 minutes'
+      and not exists(select 1 from public.audit_logs sent
+        where sent.request_id=started.request_id and sent.action='user.invite_resent'
+          and sent.organization_id=org and sent.entity_id=target.id)) then
+    raise exception 'invitation_delivery_in_progress' using errcode='55000';
+  end if;
+  -- An active last administrator is excluded by the invited-only condition.
+  if exists(select 1 from public.user_roles ur join public.roles r on r.id=ur.role_id
+    where ur.profile_id=target.id and r.system_key='super_admin')
+    and not private.has_system_role(array['super_admin']) then
+    raise exception 'super_admin_deletion_requires_super_admin' using errcode='42501';
+  end if;
+  -- Serialize with Auth confirmation/sign-in. A profile that has not finished
+  -- activation may still belong to a confirmed or signed-in Auth account.
+  select u.* into auth_target from auth.users u where u.id=target.auth_user_id for update;
+  if auth_target.id is null then raise exception 'profile_not_found' using errcode='P0002'; end if;
+  if auth_target.email_confirmed_at is not null or auth_target.phone_confirmed_at is not null
+    or auth_target.last_sign_in_at is not null
+    or exists(select 1 from auth.sessions s where s.user_id=auth_target.id) then
+    raise exception 'only_unused_invitation_can_be_deleted' using errcode='22023';
+  end if;
+  if target.avatar_url is not null or exists(
+    select 1 from storage.objects o where o.owner_id=auth_target.id::text
+      or o.owner=auth_target.id
+      or (o.bucket_id='avatars' and split_part(o.name,'/',1)=org::text
+        and split_part(o.name,'/',2)=target.id::text)
+  ) then
+    raise exception 'invitation_has_history' using errcode='23503';
+  end if;
+
+  -- Check every foreign key, including CASCADE / SET NULL relationships.
+  -- Only the initial employee data, role/team assignments and preferences are
+  -- removable setup data. Future domain tables fail closed automatically.
+  for reference in
+    select distinct ns.nspname as schema_name, rel.relname as table_name, local_col.attname as column_name
+    from pg_constraint c
+    join pg_class rel on rel.oid=c.conrelid
+    join pg_namespace ns on ns.oid=rel.relnamespace
+    cross join lateral unnest(c.conkey,c.confkey) as keys(local_attnum,foreign_attnum)
+    join pg_attribute local_col on local_col.attrelid=c.conrelid and local_col.attnum=keys.local_attnum
+    join pg_attribute foreign_col on foreign_col.attrelid=c.confrelid and foreign_col.attnum=keys.foreign_attnum
+    where c.contype='f' and c.confrelid='public.profiles'::regclass and foreign_col.attname='id'
+      and not (ns.nspname='public' and local_col.attname='profile_id'
+        and rel.relname in ('employee_profiles','user_roles','team_memberships','notification_preferences'))
+  loop
+    execute format('select exists(select 1 from %I.%I where %I=$1)',
+      reference.schema_name,reference.table_name,reference.column_name)
+      into has_history using target.id;
+    if has_history then raise exception 'invitation_has_history' using errcode='23503'; end if;
+  end loop;
+
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+    values(org,me,'user.unused_invitation_deleted','profile',target.id,coalesce(p_request_id,gen_random_uuid()),
+      jsonb_build_object('previous_status',target.status));
+  delete from public.profiles where id=target.id;
+  delete from auth.users where id=auth_target.id;
+  return target.id;
+end;
+$$;
+revoke all on function private.delete_unused_invited_user(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function private.delete_unused_invited_user(uuid,uuid) to authenticated;
+
+-- Bind the private function at creation time so the invoker wrapper does not
+-- require general USAGE access to the private schema.
+create or replace function public.admin_delete_unused_invited_user(p_profile_id uuid, p_request_id uuid)
+returns uuid language sql security invoker
+begin atomic
+  select private.delete_unused_invited_user(p_profile_id,p_request_id);
+end;
+revoke all on function public.admin_delete_unused_invited_user(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function public.admin_delete_unused_invited_user(uuid,uuid) to authenticated;
+
+-- ===== supabase/migrations/20260916073729_single_step_admin_leave_approval.sql =====
+-- A single approval is the default for existing organizations as well as new ones.
+-- Historical decisions remain unchanged. Open requests still require an explicit
+-- decision; the migration never approves requests automatically.
+update public.organization_settings
+set leave_approval_steps=1,updated_at=now()
+where leave_approval_steps<>1;
+
+update public.leave_approval_steps step
+set status='skipped',decided_by=null,decided_at=now(),
+  comment='Umstellung auf eine Freigabe; weiterer Schritt entfällt'
+from public.leave_requests request
+where request.id=step.leave_request_id
+  and request.organization_id=step.organization_id
+  and request.status in ('submitted','review')
+  and step.status='pending'
+  and step.step_number>1;
+
+create or replace function public.decide_leave_request(
+  p_request_id uuid,
+  p_status text,
+  p_note text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  me uuid:=private.current_profile_id();
+  org uuid:=private.current_organization_id();
+  target public.leave_requests%rowtype;
+  step_id uuid;
+  pending_count integer;
+  required_steps integer;
+begin
+  if me is null or not (
+    private.has_permission('leave.approve')
+    or private.has_permission('leave.manage')
+  ) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if p_status is null or p_status not in ('review','approved','rejected') then
+    raise exception 'invalid_decision' using errcode='22023';
+  end if;
+  if p_status='rejected' and nullif(trim(p_note),'') is null then
+    raise exception 'rejection_reason_required' using errcode='22023';
+  end if;
+  select * into target
+  from public.leave_requests
+  where id=p_request_id and organization_id=org
+  for update;
+  if target.id is null or target.status not in ('submitted','review') then
+    raise exception 'request_not_decidable' using errcode='22023';
+  end if;
+  if target.profile_id=me and not (
+    private.has_permission('leave.manage')
+    and private.has_system_role(array['admin','administration','super_admin'])
+  ) then
+    raise exception 'self_approval_not_allowed' using errcode='42501';
+  end if;
+  if not private.has_permission('leave.manage')
+    and not private.can_view_profile_team(target.profile_id) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  select coalesce(settings.leave_approval_steps,1) into required_steps
+  from public.organization_settings settings
+  where settings.organization_id=org;
+  required_steps:=coalesce(required_steps,1);
+  if p_status='review' then
+    update public.leave_requests
+    set status='review',decided_by=me,decided_at=now(),
+      decision_note=nullif(trim(p_note),'')
+    where id=p_request_id;
+  else
+    select id into step_id
+    from public.leave_approval_steps
+    where leave_request_id=p_request_id and status='pending'
+    order by step_number
+    limit 1
+    for update;
+    if p_status='approved' and required_steps>1 and step_id is not null and exists (
+      select 1
+      from public.leave_approval_steps las
+      where las.leave_request_id=p_request_id
+        and las.status='approved'
+        and las.decided_by=me
+    ) then
+      raise exception 'second_approver_required' using errcode='42501';
+    end if;
+    if step_id is not null and not (
+      p_status='approved' and required_steps=1 and exists (
+        select 1 from public.leave_approval_steps
+        where leave_request_id=p_request_id and status='approved'
+      )
+    ) then
+      update public.leave_approval_steps
+      set status=p_status,decided_by=me,decided_at=now(),
+        comment=nullif(trim(p_note),'')
+      where id=step_id;
+    end if;
+    if p_status='rejected' then
+      update public.leave_requests
+      set status='rejected',decided_by=me,decided_at=now(),
+        decision_note=trim(p_note)
+      where id=p_request_id;
+      update public.leave_approval_steps
+      set status='skipped',decided_by=me,decided_at=now(),
+        comment='Nach Ablehnung übersprungen'
+      where leave_request_id=p_request_id and status='pending';
+    else
+      if required_steps=1 then
+        update public.leave_approval_steps
+        set status='skipped',decided_by=me,decided_at=now(),
+          comment='Eine Freigabe genügt; weiterer Schritt entfällt'
+        where leave_request_id=p_request_id and status='pending';
+      end if;
+      select count(*) into pending_count
+      from public.leave_approval_steps
+      where leave_request_id=p_request_id and status='pending';
+      update public.leave_requests
+      set status=case when pending_count=0 then 'approved' else 'review' end,
+        decided_by=case when pending_count=0 then me else decided_by end,
+        decided_at=case when pending_count=0 then now() else decided_at end,
+        decision_note=case
+          when pending_count=0 then nullif(trim(p_note),'')
+          else decision_note
+        end
+      where id=p_request_id;
+    end if;
+  end if;
+  perform private.create_notification(
+    org,target.profile_id,'leave_status','Urlaubsantrag aktualisiert',
+    'Der Status Ihres Urlaubsantrags wurde geändert.',
+    '/app/leave',
+    'leave-status:'||p_request_id::text||':'||p_status||':'||
+      extract(epoch from now())::bigint::text
+  );
+  insert into public.audit_logs(
+    organization_id,actor_id,action,entity_type,entity_id,metadata
+  ) values(
+    org,me,'leave.decided','leave_request',p_request_id,
+    jsonb_build_object('decision',p_status)
+  );
+end;
+$$;
+
+-- Administrators with leave.manage may also decide their own request.
+-- Ordinary approvers retain the self-decision restriction at the table boundary.
+create or replace function private.guard_leave_self_decision()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if new.status in ('approved','rejected')
+    and new.decided_by is not null
+    and exists (
+      select 1
+      from public.leave_requests request
+      where request.id=new.leave_request_id
+        and request.organization_id=new.organization_id
+        and request.profile_id=new.decided_by
+    ) and not coalesce(
+      new.decided_by=private.current_profile_id()
+      and new.organization_id=private.current_organization_id()
+      and private.has_permission('leave.manage')
+      and private.has_system_role(array['admin','administration','super_admin']),
+      false
+    ) then
+    raise exception 'self_approval_not_allowed' using errcode='42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_leave_self_decision
+  on public.leave_approval_steps;
+create trigger guard_leave_self_decision
+before update of status, decided_by
+on public.leave_approval_steps
+for each row execute function private.guard_leave_self_decision();
+
+-- Preserve the authenticated RPC boundary and keep the trigger private.
+revoke all on function public.decide_leave_request(uuid,text,text) from public,anon;
+grant execute on function public.decide_leave_request(uuid,text,text) to authenticated;
+revoke all on function private.guard_leave_self_decision() from public,anon,authenticated,service_role;
+
+-- ===== supabase/migrations/20260916074424_harden_invitation_delete_rpc_search_path.sql =====
+-- The SQL-standard wrapper binds its private call at creation time. Pin its
+-- execution search path too, matching the restricted internal implementation.
+alter function public.admin_delete_unused_invited_user(uuid,uuid)
+  set search_path = pg_catalog;
+
+-- ===== supabase/migrations/20260916080044_employee_profile_editing.sql =====
+-- Employee details and login email have separate explicit save actions.
+-- Auth email changes use the supported Admin API, bracketed by audited,
+-- tenant-scoped reservations; application fields never update Auth directly.
+create or replace function private.update_employee(p_profile_id uuid,p_fields jsonb,p_request_id uuid)
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.profiles%rowtype;
+  first_name text:=trim(p_fields->>'firstName'); last_name text:=trim(p_fields->>'lastName');
+  desired_display_name text:=trim(p_fields->>'displayName');
+  employee_number text:=nullif(trim(p_fields->>'employeeNumber'),'');
+  work_phone text:=nullif(trim(p_fields->>'workPhone'),'');
+  job_title text:=nullif(trim(p_fields->>'jobTitle'),'');
+  employment_status text:=p_fields->>'employmentStatus';
+  start_date date:=nullif(p_fields->>'startDate','')::date;
+  end_date date:=nullif(p_fields->>'endDate','')::date;
+  birth_date date:=nullif(p_fields->>'birthDate','')::date;
+  weekly_hours numeric:=nullif(p_fields->>'weeklyHours','')::numeric;
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if first_name is null or length(first_name) not between 1 and 80
+    or last_name is null or length(last_name) not between 1 and 80
+    or desired_display_name is null or length(desired_display_name) not between 2 and 120
+    or length(employee_number)>80 or length(work_phone)>40 or length(job_title)>120
+    or employment_status is null or employment_status not in ('active','leave','inactive','terminated')
+    or weekly_hours<0 or weekly_hours>80 or (end_date is not null and start_date is not null and end_date<start_date)
+    or birth_date>current_date then
+    raise exception 'invalid_employee_fields' using errcode='22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  select p.* into target from public.profiles p where p.id=p_profile_id and p.organization_id=org for update;
+  if target.id is null or target.auth_user_id is null or to_jsonb(target)->>'deleted_at' is not null then
+    raise exception 'profile_not_found' using errcode='P0002';
+  end if;
+  update public.profiles p set display_name=desired_display_name where p.id=target.id;
+  insert into public.employee_profiles(profile_id,organization_id,first_name,last_name,employee_number,work_phone,
+    job_title,employment_status,start_date,end_date,birth_date,weekly_hours)
+  values(target.id,org,first_name,last_name,employee_number,work_phone,job_title,employment_status,start_date,end_date,birth_date,weekly_hours)
+  on conflict(profile_id) do update set first_name=excluded.first_name,last_name=excluded.last_name,
+    employee_number=excluded.employee_number,work_phone=excluded.work_phone,job_title=excluded.job_title,
+    employment_status=excluded.employment_status,start_date=excluded.start_date,end_date=excluded.end_date,
+    birth_date=excluded.birth_date,weekly_hours=excluded.weekly_hours;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+  values(org,me,'user.employee_data_updated','profile',target.id,coalesce(p_request_id,gen_random_uuid()),
+    jsonb_build_object('fields',array['first_name','last_name','display_name','employee_number','work_phone','job_title',
+      'employment_status','start_date','end_date','birth_date','weekly_hours']));
+  return target.id;
+end;
+$$;
+
+create or replace function private.begin_employee_email_change(p_profile_id uuid,p_email text,p_request_id uuid)
+returns table(auth_user_id uuid,email text,status text)
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); target public.profiles%rowtype;
+  new_email text:=lower(trim(p_email));
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_request_id is null or new_email is null or length(new_email)>254
+    or new_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then
+    raise exception 'invalid_email' using errcode='22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  select p.* into target from public.profiles p where p.id=p_profile_id and p.organization_id=org for update;
+  if target.id is null or target.auth_user_id is null or to_jsonb(target)->>'deleted_at' is not null then
+    raise exception 'profile_not_found' using errcode='P0002';
+  end if;
+  if exists(select 1 from public.audit_logs started where started.organization_id=org and started.entity_id=target.id
+    and started.created_at>now()-interval '10 minutes'
+    and ((started.action='user.email_change_started' and not exists(select 1 from public.audit_logs done
+      where done.organization_id=org and done.entity_id=target.id and done.request_id=started.request_id
+        and done.action in ('user.email_changed','user.email_change_failed')))
+      or (started.action='user.invite_resend_started' and not exists(select 1 from public.audit_logs done
+        where done.organization_id=org and done.entity_id=target.id and done.request_id=started.request_id
+          and done.action='user.invite_resent')))) then
+    raise exception 'account_operation_in_progress' using errcode='55000';
+  end if;
+  if exists(select 1 from auth.users u where lower(u.email)=new_email and u.id<>target.auth_user_id)
+    or exists(select 1 from public.profiles p where p.organization_id=org and lower(p.email)=new_email and p.id<>target.id) then
+    raise exception 'email_not_available' using errcode='23505';
+  end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+    values(org,me,'user.email_change_started','profile',target.id,p_request_id,
+      jsonb_build_object('new_email',new_email,'previous_email',target.email));
+  return query select target.auth_user_id,target.email,target.status;
+end;
+$$;
+
+create or replace function private.complete_employee_email_change(p_profile_id uuid,p_request_id uuid)
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); target public.profiles%rowtype;
+  operation public.audit_logs%rowtype; actual_email text;
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  select p.* into target from public.profiles p where p.id=p_profile_id and p.organization_id=org for update;
+  if target.id is null or target.auth_user_id is null or to_jsonb(target)->>'deleted_at' is not null then
+    raise exception 'profile_not_found' using errcode='P0002';
+  end if;
+  select a.* into operation from public.audit_logs a where a.request_id=p_request_id
+    and a.organization_id=org and a.entity_id=target.id and a.actor_id=me and a.action='user.email_change_started'
+    and a.created_at>now()-interval '10 minutes' for update;
+  if operation.id is null or exists(select 1 from public.audit_logs a where a.request_id=p_request_id
+    and a.organization_id=org and a.entity_id=target.id and a.action in ('user.email_changed','user.email_change_failed')) then
+    raise exception 'email_change_not_pending' using errcode='22023';
+  end if;
+  select lower(u.email) into actual_email from auth.users u where u.id=target.auth_user_id for update;
+  if actual_email is distinct from operation.metadata->>'new_email' then
+    raise exception 'auth_email_not_updated' using errcode='55000';
+  end if;
+  update public.profiles set email=actual_email where id=target.id;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+  values(org,me,'user.email_changed','profile',target.id,p_request_id,
+    jsonb_build_object('previous_email',target.email,'new_email',actual_email));
+  return target.id;
+end;
+$$;
+
+create or replace function private.cancel_employee_email_change(p_profile_id uuid,p_request_id uuid,p_auth_restored boolean)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  perform 1 from public.profiles p where p.id=p_profile_id and p.organization_id=org for update;
+  if not exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=p_profile_id
+    and a.actor_id=me and a.request_id=p_request_id and a.action='user.email_change_started') then
+    raise exception 'email_change_not_pending' using errcode='22023';
+  end if;
+  if not exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=p_profile_id
+    and a.request_id=p_request_id and a.action in ('user.email_changed','user.email_change_failed')) then
+    insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+    values(org,me,'user.email_change_failed','profile',p_profile_id,p_request_id,
+      jsonb_build_object('auth_restored',p_auth_restored));
+  end if;
+end;
+$$;
+
+create or replace function private.employee_email_change_state(p_profile_id uuid,p_request_id uuid)
+returns text language plpgsql stable security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if not exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=p_profile_id
+    and a.actor_id=me and a.request_id=p_request_id and a.action='user.email_change_started') then
+    raise exception 'email_change_not_pending' using errcode='22023';
+  end if;
+  if exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=p_profile_id
+    and a.request_id=p_request_id and a.action='user.email_changed') then return 'completed'; end if;
+  if exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=p_profile_id
+    and a.request_id=p_request_id and a.action='user.email_change_failed') then return 'failed'; end if;
+  return 'pending';
+end;
+$$;
+
+revoke all on function private.update_employee(uuid,jsonb,uuid),private.begin_employee_email_change(uuid,text,uuid),
+  private.complete_employee_email_change(uuid,uuid),private.cancel_employee_email_change(uuid,uuid,boolean),private.employee_email_change_state(uuid,uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function private.update_employee(uuid,jsonb,uuid),private.begin_employee_email_change(uuid,text,uuid),
+  private.complete_employee_email_change(uuid,uuid),private.cancel_employee_email_change(uuid,uuid,boolean),private.employee_email_change_state(uuid,uuid) to authenticated;
+
+create or replace function public.admin_update_employee(p_profile_id uuid,p_fields jsonb,p_request_id uuid)
+returns uuid language sql security invoker begin atomic
+  select private.update_employee(p_profile_id,p_fields,p_request_id);
+end;
+create or replace function public.admin_begin_employee_email_change(p_profile_id uuid,p_email text,p_request_id uuid)
+returns table(auth_user_id uuid,email text,status text) language sql security invoker begin atomic
+  select * from private.begin_employee_email_change(p_profile_id,p_email,p_request_id);
+end;
+create or replace function public.admin_complete_employee_email_change(p_profile_id uuid,p_request_id uuid)
+returns uuid language sql security invoker begin atomic
+  select private.complete_employee_email_change(p_profile_id,p_request_id);
+end;
+create or replace function public.admin_cancel_employee_email_change(p_profile_id uuid,p_request_id uuid,p_auth_restored boolean)
+returns void language sql security invoker begin atomic
+  select private.cancel_employee_email_change(p_profile_id,p_request_id,p_auth_restored);
+end;
+create or replace function public.admin_employee_email_change_state(p_profile_id uuid,p_request_id uuid)
+returns text language sql security invoker begin atomic
+  select private.employee_email_change_state(p_profile_id,p_request_id);
+end;
+alter function public.admin_update_employee(uuid,jsonb,uuid) set search_path=pg_catalog;
+alter function public.admin_begin_employee_email_change(uuid,text,uuid) set search_path=pg_catalog;
+alter function public.admin_complete_employee_email_change(uuid,uuid) set search_path=pg_catalog;
+alter function public.admin_cancel_employee_email_change(uuid,uuid,boolean) set search_path=pg_catalog;
+alter function public.admin_employee_email_change_state(uuid,uuid) set search_path=pg_catalog;
+revoke all on function public.admin_update_employee(uuid,jsonb,uuid),public.admin_begin_employee_email_change(uuid,text,uuid),
+  public.admin_complete_employee_email_change(uuid,uuid),public.admin_cancel_employee_email_change(uuid,uuid,boolean),public.admin_employee_email_change_state(uuid,uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function public.admin_update_employee(uuid,jsonb,uuid),public.admin_begin_employee_email_change(uuid,text,uuid),
+  public.admin_complete_employee_email_change(uuid,uuid),public.admin_cancel_employee_email_change(uuid,uuid,boolean),public.admin_employee_email_change_state(uuid,uuid) to authenticated;
+
+-- Invitation delivery must not race with a correction of its recipient.
+create or replace function public.admin_begin_invite_resend(p_profile_id uuid,p_request_id uuid)
+returns table(auth_user_id uuid,email text,status text)
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); target public.profiles%rowtype;
+begin
+  if me is null or not private.has_permission('users.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('invite-resend:'||p_profile_id::text,0));
+  select * into target from public.profiles p where p.id=p_profile_id and p.organization_id=org for update;
+  if target.id is null or target.auth_user_id is null or to_jsonb(target)->>'deleted_at' is not null or target.status<>'invited' then
+    raise exception 'invite_not_available' using errcode='22023';
+  end if;
+  if exists(select 1 from public.audit_logs started where started.organization_id=org and started.entity_id=target.id
+    and started.action='user.email_change_started' and started.created_at>now()-interval '10 minutes'
+    and not exists(select 1 from public.audit_logs done where done.organization_id=org and done.entity_id=target.id
+      and done.request_id=started.request_id and done.action in ('user.email_changed','user.email_change_failed'))) then
+    raise exception 'account_operation_in_progress' using errcode='55000';
+  end if;
+  if exists(select 1 from public.audit_logs a where a.organization_id=org and a.entity_id=target.id
+    and a.action='user.invite_resend_started' and a.created_at>now()-interval '60 seconds') then
+    raise exception 'invite_cooldown' using errcode='P0001';
+  end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+    values(org,me,'user.invite_resend_started','profile',target.id,p_request_id,'{}');
+  return query select target.auth_user_id,target.email,target.status;
+end;
+$$;
+
+-- ===== supabase/migrations/20260916080136_retained_deleted_users_and_three_roles.sql =====
+-- Account removal preserves the application profile and every domain reference.
+-- Only the Auth identity/access credentials are removed. Nothing is deployed
+-- by this file alone; apply it as a reviewed migration.
+alter table public.profiles alter column auth_user_id drop not null;
+alter table public.profiles
+  add column deleted_at timestamptz,
+  add column deleted_by uuid references public.profiles;
+alter table public.profiles add constraint profiles_deleted_identity_check check (
+  (deleted_at is null and auth_user_id is not null)
+  or (deleted_at is not null and auth_user_id is null and status='archived')
+);
+
+create or replace function private.guard_deleted_profile()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if old.deleted_at is not null and new is distinct from old then
+    raise exception 'deleted_account_is_immutable' using errcode='42501';
+  end if;
+  return new;
+end $$;
+revoke all on function private.guard_deleted_profile() from public,anon,authenticated,service_role;
+create trigger guard_deleted_profile before update on public.profiles
+for each row execute function private.guard_deleted_profile();
+
+insert into public.permissions(key,description) values
+  ('data.correct','Bestehende Fachdaten mit Änderungsgrund korrigieren (nur Super Admin)')
+on conflict(key) do update set description=excluded.description;
+
+-- Preserve role records for historic references, while removing unused roles
+-- from the assignable catalogue. Do not silently promote or demote people.
+do $$ begin
+  if exists(select 1 from public.user_roles ur
+    join public.roles r on r.id=ur.role_id
+    join public.profiles p on p.id=ur.profile_id and p.status in ('active','invited','suspended')
+    where coalesce(r.system_key,'') not in ('super_admin','employee','team_lead')
+      and (ur.valid_until is null or ur.valid_until>now())) then
+    raise exception 'unsupported_roles_still_assigned_review_required';
+  end if;
+end $$;
+update public.roles set active=false
+where coalesce(system_key,'') not in ('super_admin','employee','team_lead');
+update public.roles set name=case system_key when 'super_admin' then 'Super Admin'
+  when 'employee' then 'Mitarbeiter' else 'Teamleitung' end
+where system_key in ('super_admin','employee','team_lead');
+
+create or replace function public.create_role(p_name text)
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if not private.has_system_role(array['super_admin']) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  raise exception 'fixed_role_catalog' using errcode='22023';
+end $$;
+
+create or replace function private.delete_user(p_profile_id uuid,p_request_id uuid)
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id();
+  org uuid:=private.current_organization_id();
+  target public.profiles%rowtype;
+  auth_id uuid;
+begin
+  if auth.uid() is null or me is null or not private.has_permission('users.manage')
+    or not private.has_system_role(array['super_admin']) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if p_profile_id=me then raise exception 'cannot_delete_own_account' using errcode='42501'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('super-admin:'||org::text,0));
+  select * into target from public.profiles where id=p_profile_id and organization_id=org for update;
+  if target.id is null then raise exception 'profile_not_found' using errcode='P0002'; end if;
+  if target.deleted_at is not null then return target.id; end if;
+  if exists(select 1 from public.user_roles ur join public.roles r on r.id=ur.role_id
+    where ur.profile_id=target.id and r.system_key='super_admin' and r.active
+      and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now()))
+    and not exists(select 1 from public.user_roles ur join public.roles r on r.id=ur.role_id
+      join public.profiles p on p.id=ur.profile_id
+      where p.organization_id=org and p.status='active' and p.deleted_at is null and p.id<>target.id
+        and r.system_key='super_admin' and r.active
+        and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())) then
+    raise exception 'last_super_admin_cannot_be_deleted' using errcode='42501';
+  end if;
+  -- Other account operations cross the Auth API transaction boundary. Their
+  -- audited reservations prevent deletion while an email/send is in flight.
+  if exists(select 1 from public.audit_logs started where started.organization_id=org
+    and started.entity_id=target.id and started.created_at>now()-interval '10 minutes'
+    and started.action in ('user.invite_resend_started','user.email_change_started')
+    and not exists(select 1 from public.audit_logs finished
+      where finished.organization_id=org and finished.entity_id=target.id
+        and finished.request_id=started.request_id
+        and ((started.action='user.invite_resend_started' and finished.action='user.invite_resent')
+          or (started.action='user.email_change_started' and finished.action in ('user.email_changed','user.email_change_failed'))))) then
+    raise exception 'account_operation_in_progress' using errcode='55000';
+  end if;
+  auth_id:=target.auth_user_id;
+  perform 1 from auth.users where id=auth_id for update;
+  if not found then raise exception 'auth_user_not_found' using errcode='P0002'; end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,request_id,metadata)
+  values(org,me,'user.deleted_access_revoked','profile',target.id,coalesce(p_request_id,gen_random_uuid()),
+    jsonb_build_object('previous_status',target.status,'previous_display_name',target.display_name,
+      'previous_email',target.email,'data_retained',true));
+  -- Update only ownership metadata, never delete Storage objects or files.
+  -- Domain paths, references, RLS and private buckets continue protecting files.
+  update storage.objects set owner=null,owner_id=null where owner=auth_id or owner_id=auth_id::text;
+  update storage.buckets set owner=null,owner_id=null where owner=auth_id or owner_id=auth_id::text;
+  update public.profiles set auth_user_id=null,status='archived',archived_at=now(),
+    deleted_at=now(),deleted_by=me,display_name='Gelöschter Benutzer',avatar_url=null,
+    email=target.id::text||'@deleted.invalid',updated_at=now()
+  where id=target.id;
+  -- Profile ID and domain/history rows (including memberships, messages and
+  -- files) remain. Removing Auth cascades sessions, identities and OTPs.
+  delete from auth.refresh_tokens where user_id=auth_id::text;
+  delete from auth.users where id=auth_id;
+  update public.user_devices set revoked_at=now(),push_token=null,push_token_hash=null
+    where profile_id=target.id;
+  return target.id;
+end $$;
+revoke all on function private.delete_user(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function private.delete_user(uuid,uuid) to authenticated;
+create or replace function public.admin_delete_user(p_profile_id uuid,p_request_id uuid)
+returns uuid language sql security invoker set search_path=pg_catalog
+begin atomic
+  select private.delete_user(p_profile_id,p_request_id);
+end;
+revoke all on function public.admin_delete_user(uuid,uuid) from public,anon,authenticated,service_role;
+grant execute on function public.admin_delete_user(uuid,uuid) to authenticated;
+
+-- Compatibility: even older clients now preserve the application data when
+-- removing an unused invitation. Their old endpoint cannot hard-delete it.
+create or replace function private.delete_unused_invited_user(p_profile_id uuid,p_request_id uuid)
+returns uuid language sql security definer set search_path=pg_catalog
+as $$ select private.delete_user(p_profile_id,p_request_id) $$;
+
+-- Tombstones are readable so existing messages keep a stable visible author.
+-- Original employee details remain available only to user administrators.
+drop policy profiles_read on public.profiles;
+create policy profiles_read on public.profiles for select to authenticated using (
+  organization_id=private.current_organization_id() and (
+    id=private.current_profile_id()
+    or (status='active' and private.has_permission('directory.view'))
+    or (deleted_at is not null and private.has_permission('messages.use'))
+    or private.has_permission('users.view')
+  )
+);
+-- Policies execute with the caller's column privileges. Keep deleted_at
+-- private while letting the policy resolve a same-organization tombstone.
+create or replace function private.is_deleted_profile(p_profile_id uuid)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.profiles p where p.id=p_profile_id
+    and p.organization_id=private.current_organization_id() and p.deleted_at is not null)
+$$;
+revoke all on function private.is_deleted_profile(uuid) from public,anon,authenticated,service_role;
+grant execute on function private.is_deleted_profile(uuid) to authenticated;
+drop policy employee_profiles_read on public.employee_profiles;
+create policy employee_profiles_read on public.employee_profiles for select to authenticated using (
+  organization_id=private.current_organization_id()
+  and (profile_id=private.current_profile_id() or private.has_permission('directory.view') or private.has_permission('users.view'))
+  and (private.has_permission('users.manage') or not private.is_deleted_profile(profile_id))
+);
+
+-- Effective corrections are reserved to real Super Admins.
+create or replace function private.has_permission(permission_key text)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.permissions p where p.key=$1) and (
+    case when $1='data.correct' then private.has_system_role(array['super_admin'])
+      when $1 in ('leave.create','sick_leave.create','leave.create_own','sick_leave.create_own')
+      then private.has_system_role(array['admin','administration','super_admin'])
+      else private.has_system_role(array['super_admin']) or exists (
+        select 1 from public.user_roles ur
+        join public.roles r on r.id=ur.role_id and r.organization_id=ur.organization_id and r.active
+        join public.role_permissions rp on rp.role_id=r.id
+        where ur.profile_id=private.current_profile_id()
+          and ur.organization_id=private.current_organization_id()
+          and rp.permission_key=$1 and ur.valid_from<=now()
+          and (ur.valid_until is null or ur.valid_until>now())
+      ) end
+  )
+$$;
+
+create or replace function private.profile_has_permission(p_profile_id uuid,p_organization_id uuid,p_permission_key text)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.permissions permission where permission.key=p_permission_key)
+    and exists (
+      select 1 from public.profiles p
+      join public.organizations o on o.id=p.organization_id and o.active
+      join public.user_roles ur on ur.profile_id=p.id and ur.organization_id=p.organization_id
+      join public.roles r on r.id=ur.role_id and r.organization_id=p.organization_id and r.active
+      where p.id=p_profile_id and p.organization_id=p_organization_id and p.status='active'
+        and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())
+        and case when p_permission_key='data.correct' then r.system_key='super_admin'
+          when p_permission_key in ('leave.create','sick_leave.create','leave.create_own','sick_leave.create_own')
+          then r.system_key in ('admin','administration','super_admin')
+          else r.system_key='super_admin' or exists(
+            select 1 from public.role_permissions rp where rp.role_id=r.id and rp.permission_key=p_permission_key
+          ) end
+    )
+$$;
+
+create or replace function private.can_delegate_role(p_role_id uuid)
+returns boolean language sql stable security definer set search_path=pg_catalog,public as $$
+  select exists(select 1 from public.roles r
+    where r.id=p_role_id and r.organization_id=private.current_organization_id() and r.active
+      and r.system_key in ('super_admin','employee','team_lead')
+      and (r.system_key is distinct from 'super_admin' or private.has_system_role(array['super_admin']))
+      and (coalesce(r.system_key,'') not in ('admin','administration') or private.has_system_role(array['admin','administration','super_admin']))
+      and (private.has_permission('roles.manage') or not exists(
+        select 1 from public.role_permissions rp where rp.role_id=r.id
+          and not private.has_permission(rp.permission_key)
+          and not(r.system_key is not distinct from 'employee' and rp.permission_key=any(array[
+            'dashboard.view','directory.view','messages.use','news.view',
+            'schedule.view_own','leave.view_own','sick_leave.view_own',
+            'leave.create_own','sick_leave.create_own','documents.view_own','documents.view_shared',
+            'documents.view_folders','fleet.view_own','mileage.submit_own','materials.create_own'
+          ]))
+      ))
+  )
+$$;
+
+create or replace function public.set_role_permission(
+  p_role_id uuid,
+  p_permission_key text,
+  p_enabled boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  me uuid:=private.current_profile_id();
+  org uuid:=private.current_organization_id();
+  role_key text;
+  changed integer:=0;
+begin
+  if p_enabled is null then
+    raise exception 'invalid_boolean' using errcode='22023';
+  end if;
+  if me is null or not private.has_permission('roles.manage') then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtextextended('super-admin:'||org::text,0)
+  );
+  select r.system_key into role_key
+  from public.roles r
+  where r.id=p_role_id and r.organization_id=org and r.active
+  for update;
+  if not found then
+    raise exception 'role_not_available' using errcode='22023';
+  end if;
+  if not exists (
+    select 1 from public.permissions p where p.key=p_permission_key
+  ) then
+    raise exception 'permission_not_available' using errcode='22023';
+  end if;
+  if p_permission_key in ('data.correct','leave.create','sick_leave.create','leave.create_own','sick_leave.create_own') then
+    raise exception 'admin_only_permission' using errcode='42501';
+  end if;
+  if role_key='super_admin'
+    and not p_enabled
+    and p_permission_key in ('users.manage','roles.manage') then
+    raise exception 'protected_super_admin_permission' using errcode='42501';
+  end if;
+  if p_enabled then
+    insert into public.role_permissions(role_id,permission_key)
+    values(p_role_id,p_permission_key)
+    on conflict do nothing;
+    get diagnostics changed=row_count;
+  else
+    delete from public.role_permissions
+    where role_id=p_role_id and permission_key=p_permission_key;
+    get diagnostics changed=row_count;
+  end if;
+  if changed>0 then
+    insert into public.audit_logs(
+      organization_id,actor_id,action,entity_type,entity_id,metadata
+    ) values(
+      org,me,
+      case
+        when p_enabled then 'role.permission_granted'
+        else 'role.permission_revoked'
+      end,
+      'role',p_role_id,
+      jsonb_build_object('permission_key',p_permission_key)
+    );
+  end if;
+end;
+$$;
+
+-- Retained tombstones are omitted from employee administration lists.
+create or replace function public.admin_list_users()
+returns table(
+  id uuid,
+  display_name text,
+  email text,
+  status text,
+  avatar_url text,
+  first_name text,
+  last_name text,
+  employee_number text,
+  work_phone text,
+  job_title text,
+  employment_status text,
+  start_date date,
+  end_date date,
+  birth_date date,
+  weekly_hours numeric,
+  roles jsonb,
+  teams jsonb
+)
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if not (private.has_permission('users.view') or private.has_permission('users.manage')) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  return query
+  select p.id,p.display_name,p.email,p.status,p.avatar_url,ep.first_name,ep.last_name,
+    case when private.has_permission('users.manage') or private.has_permission('sick_leave.manage') then ep.employee_number end,
+    ep.work_phone,ep.job_title,
+    case when private.has_permission('users.manage') or private.has_permission('sick_leave.manage') then ep.employment_status end,
+    case when private.has_permission('users.manage') or private.has_permission('sick_leave.manage') then ep.start_date end,
+    case when private.has_permission('users.manage') or private.has_permission('sick_leave.manage') then ep.end_date end,
+    case when private.has_permission('birthdays.view_admin_notifications') or private.has_permission('sick_leave.manage') then ep.birth_date end,
+    case when private.has_permission('users.manage') or private.has_permission('sick_leave.manage') then ep.weekly_hours end,
+    coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'name',r.name,'system_key',r.system_key) order by r.name)
+      from public.user_roles ur join public.roles r on r.id=ur.role_id
+      where ur.profile_id=p.id and r.active and r.system_key in ('super_admin','employee','team_lead') and ur.valid_from<=now() and (ur.valid_until is null or ur.valid_until>now())),'[]'::jsonb),
+    coalesce((select jsonb_agg(jsonb_build_object('id',t.id,'name',t.name) order by t.name)
+      from public.team_memberships tm join public.teams t on t.id=tm.team_id
+      where tm.profile_id=p.id and tm.valid_from<=current_date and (tm.valid_until is null or tm.valid_until>=current_date)),'[]'::jsonb)
+  from public.profiles p left join public.employee_profiles ep on ep.profile_id=p.id
+  where p.organization_id=private.current_organization_id() and p.deleted_at is null
+  order by p.display_name;
+end;
+$$;
+
+-- ===== supabase/migrations/20260916080152_super_admin_record_corrections.sql =====
+-- Corrections use separate audited endpoints. Workflow status, authorship,
+-- recipients and file access boundaries are never changed as a side effect.
+create or replace function private.correct_leave_request(
+  p_request_id uuid,p_leave_type text,p_starts_on date,p_ends_on date,
+  p_day_fraction numeric,p_note text,p_correction_reason text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.leave_requests%rowtype; after_row public.leave_requests%rowtype;
+  type_id uuid; note_required boolean; days numeric;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if length(trim(coalesce(p_correction_reason,''))) not between 3 and 500 then raise exception 'correction_reason_required' using errcode='22023'; end if;
+  select * into target from public.leave_requests where id=p_request_id and organization_id=org;
+  if target.id is null then raise exception 'request_not_found' using errcode='P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('leave:'||target.profile_id::text,0));
+  select * into target from public.leave_requests where id=p_request_id and organization_id=org for update;
+  if p_starts_on is null or p_ends_on is null or p_ends_on<p_starts_on or p_day_fraction is null or p_day_fraction not in (0.5,1) or (p_day_fraction=0.5 and p_starts_on<>p_ends_on) or p_ends_on-p_starts_on>3660 or length(coalesce(p_note,''))>500 then raise exception 'invalid_leave_request' using errcode='22023'; end if;
+  select id,requires_note into type_id,note_required from public.leave_types where organization_id=org and (active or id=target.leave_type_id) and (code=p_leave_type or name=p_leave_type);
+  if type_id is null then raise exception 'leave_type_not_available' using errcode='22023'; end if;
+  if note_required and nullif(trim(p_note),'') is null then raise exception 'note_required' using errcode='22023'; end if;
+  -- Corrections may concern historical leave; new-request date restrictions do not apply.
+  select count(*)::numeric*p_day_fraction into days
+  from generate_series(p_starts_on,p_ends_on,interval '1 day') day_value
+  where extract(isodow from day_value)<6 and not exists(
+    select 1 from public.public_holidays holiday
+    where holiday.organization_id=org and holiday.holiday_on=day_value::date
+      and (holiday.location_id is null or holiday.location_id=(select location_id from public.employee_profiles where profile_id=target.profile_id))
+  );
+  if days<=0 then raise exception 'no_workdays_in_period' using errcode='22023'; end if;
+  if target.status in ('submitted','review','approved') and exists(
+    select 1 from public.leave_requests r where r.id<>target.id and r.profile_id=target.profile_id
+      and r.status in ('submitted','review','approved')
+      and daterange(r.starts_on,r.ends_on,'[]') && daterange(p_starts_on,p_ends_on,'[]')
+  ) then raise exception 'overlapping_leave_request' using errcode='23P01'; end if;
+  update public.leave_requests set leave_type=p_leave_type,leave_type_id=type_id,starts_on=p_starts_on,
+    ends_on=p_ends_on,day_fraction=p_day_fraction,workdays=days,note=nullif(trim(p_note),'')
+    where id=target.id returning * into after_row;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(org,me,'leave.corrected','leave_request',target.id,jsonb_build_object(
+      'reason',trim(p_correction_reason),'before',to_jsonb(target),'after',to_jsonb(after_row)));
+  return target.id;
+end $$;
+
+create or replace function private.correct_sick_leave_record(
+  p_record_id uuid,p_starts_on date,p_expected_end_on date,p_end_unknown boolean,
+  p_certificate_status text,p_correction_reason text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.sick_leave_records%rowtype; after_row public.sick_leave_records%rowtype;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if length(trim(coalesce(p_correction_reason,''))) not between 3 and 500 then raise exception 'correction_reason_required' using errcode='22023'; end if;
+  select * into target from public.sick_leave_records where id=p_record_id and organization_id=org;
+  if target.id is null then raise exception 'record_not_found' using errcode='P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('sick:'||target.profile_id::text,0));
+  select * into target from public.sick_leave_records where id=p_record_id and organization_id=org for update;
+  if p_starts_on is null or p_end_unknown is null or (p_end_unknown and p_expected_end_on is not null)
+    or (not p_end_unknown and (p_expected_end_on is null or p_expected_end_on<p_starts_on))
+    or p_certificate_status is null or p_certificate_status not in ('not_required','required','pending','received','verified','rejected') then
+    raise exception 'invalid_sick_leave_correction' using errcode='22023'; end if;
+  if p_certificate_status in ('received','verified') and not exists(
+    select 1 from public.sick_leave_document_versions d where d.sick_leave_id=target.id and d.organization_id=org and d.deleted_at is null
+  ) then raise exception 'certificate_file_required' using errcode='22023'; end if;
+  if target.status not in ('closed','cancelled') and exists(
+    select 1 from public.sick_leave_records r where r.id<>target.id and r.profile_id=target.profile_id
+      and r.status not in ('closed','cancelled')
+      and daterange(r.starts_on,coalesce(r.expected_end_on,'infinity'::date),'[]') && daterange(p_starts_on,coalesce(p_expected_end_on,'infinity'::date),'[]')
+  ) then raise exception 'overlapping_sick_leave' using errcode='23P01'; end if;
+  update public.sick_leave_records set starts_on=p_starts_on,expected_end_on=p_expected_end_on,
+    end_unknown=p_end_unknown,certificate_status=p_certificate_status,
+    certificate_required=p_certificate_status in ('required','pending','received','verified','rejected')
+    where id=target.id returning * into after_row;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(org,me,'sick_leave.corrected','sick_leave',target.id,jsonb_build_object(
+      'reason',trim(p_correction_reason),'before',to_jsonb(target),'after',to_jsonb(after_row)));
+  return target.id;
+end $$;
+
+create or replace function private.correct_material_request(
+  p_request_id uuid,p_category text,p_item text,p_quantity numeric,p_unit text,
+  p_priority text,p_needed_on date,p_reason text,p_correction_reason text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.material_requests%rowtype; after_row public.material_requests%rowtype; item_id uuid;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if length(trim(coalesce(p_correction_reason,''))) not between 3 and 500 then raise exception 'correction_reason_required' using errcode='22023'; end if;
+  select * into target from public.material_requests where id=p_request_id and organization_id=org for update;
+  if target.id is null then raise exception 'request_not_found' using errcode='P0002'; end if;
+  if length(trim(coalesce(p_category,''))) not between 1 and 80 or length(trim(coalesce(p_item,''))) not between 1 and 180
+    or p_quantity is null or p_quantity::text in ('NaN','Infinity','-Infinity') or p_quantity<=0
+    or length(trim(coalesce(p_unit,''))) not between 1 and 40
+    or p_priority is null or p_priority not in ('low','normal','high','urgent')
+    or length(coalesce(p_reason,''))>1000 then raise exception 'invalid_material_request' using errcode='22023'; end if;
+  -- The current editor describes one position. Never rewrite a multi-item order.
+  if (select count(*) from public.material_request_items where request_id=target.id)>1 then raise exception 'multi_item_request_requires_item_editor' using errcode='22023'; end if;
+  update public.material_requests set category=trim(p_category),item=trim(p_item),title=trim(p_item),
+    quantity=p_quantity,unit=trim(p_unit),priority=p_priority,needed_on=p_needed_on,reason=nullif(trim(p_reason),'')
+    where id=target.id returning * into after_row;
+  select id into item_id from public.material_request_items where request_id=target.id limit 1 for update;
+  if item_id is null then
+    insert into public.material_request_items(organization_id,request_id,item_name,quantity,unit)
+      values(org,target.id,trim(p_item),p_quantity,trim(p_unit));
+  else
+    update public.material_request_items set item_name=trim(p_item),quantity=p_quantity,unit=trim(p_unit) where id=item_id;
+  end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(org,me,'material.corrected','material_request',target.id,jsonb_build_object(
+      'reason',trim(p_correction_reason),'before',to_jsonb(target),'after',to_jsonb(after_row)));
+  return target.id;
+end $$;
+
+create or replace function private.correct_document_metadata(
+  p_document_id uuid,p_title text,p_acknowledgement_required boolean,p_valid_from timestamptz,
+  p_valid_until timestamptz,p_correction_reason text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.documents%rowtype; after_row public.documents%rowtype;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if length(trim(coalesce(p_correction_reason,''))) not between 3 and 500 then raise exception 'correction_reason_required' using errcode='22023'; end if;
+  select * into target from public.documents where id=p_document_id and organization_id=org for update;
+  if target.id is null or not private.can_manage_document(target.id) then raise exception 'document_not_available' using errcode='42501'; end if;
+  if length(trim(coalesce(p_title,''))) not between 2 and 180 or p_acknowledgement_required is null
+    or (p_valid_from is not null and p_valid_until is not null and p_valid_until<=p_valid_from) then
+    raise exception 'invalid_document_metadata' using errcode='22023'; end if;
+  update public.documents set title=trim(p_title),acknowledgement_required=p_acknowledgement_required,
+    valid_from=p_valid_from,valid_until=p_valid_until where id=target.id returning * into after_row;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(org,me,'document.metadata_corrected','document',target.id,jsonb_build_object(
+      'reason',trim(p_correction_reason),'before',to_jsonb(target),'after',to_jsonb(after_row)));
+  return target.id;
+end $$;
+
+-- Prebound wrappers expose only the checked operations, without schema USAGE.
+create or replace function public.correct_leave_request(p_request_id uuid,p_leave_type text,p_starts_on date,p_ends_on date,p_day_fraction numeric,p_note text,p_correction_reason text)
+returns uuid language sql security invoker set search_path=pg_catalog,public begin atomic
+ select private.correct_leave_request(p_request_id,p_leave_type,p_starts_on,p_ends_on,p_day_fraction,p_note,p_correction_reason); end;
+create or replace function public.correct_sick_leave_record(p_record_id uuid,p_starts_on date,p_expected_end_on date,p_end_unknown boolean,p_certificate_status text,p_correction_reason text)
+returns uuid language sql security invoker set search_path=pg_catalog,public begin atomic
+ select private.correct_sick_leave_record(p_record_id,p_starts_on,p_expected_end_on,p_end_unknown,p_certificate_status,p_correction_reason); end;
+create or replace function public.correct_material_request(p_request_id uuid,p_category text,p_item text,p_quantity numeric,p_unit text,p_priority text,p_needed_on date,p_reason text,p_correction_reason text)
+returns uuid language sql security invoker set search_path=pg_catalog,public begin atomic
+ select private.correct_material_request(p_request_id,p_category,p_item,p_quantity,p_unit,p_priority,p_needed_on,p_reason,p_correction_reason); end;
+create or replace function public.correct_document_metadata(p_document_id uuid,p_title text,p_acknowledgement_required boolean,p_valid_from timestamptz,p_valid_until timestamptz,p_correction_reason text)
+returns uuid language sql security invoker set search_path=pg_catalog,public begin atomic
+ select private.correct_document_metadata(p_document_id,p_title,p_acknowledgement_required,p_valid_from,p_valid_until,p_correction_reason); end;
+revoke all on function private.correct_leave_request(uuid,text,date,date,numeric,text,text),public.correct_leave_request(uuid,text,date,date,numeric,text,text),
+ private.correct_sick_leave_record(uuid,date,date,boolean,text,text),public.correct_sick_leave_record(uuid,date,date,boolean,text,text),
+ private.correct_material_request(uuid,text,text,numeric,text,text,date,text,text),public.correct_material_request(uuid,text,text,numeric,text,text,date,text,text),
+ private.correct_document_metadata(uuid,text,boolean,timestamptz,timestamptz,text),public.correct_document_metadata(uuid,text,boolean,timestamptz,timestamptz,text)
+ from public,anon,authenticated,service_role;
+grant execute on function private.correct_leave_request(uuid,text,date,date,numeric,text,text),public.correct_leave_request(uuid,text,date,date,numeric,text,text),
+ private.correct_sick_leave_record(uuid,date,date,boolean,text,text),public.correct_sick_leave_record(uuid,date,date,boolean,text,text),
+ private.correct_material_request(uuid,text,text,numeric,text,text,date,text,text),public.correct_material_request(uuid,text,text,numeric,text,text,date,text,text),
+ private.correct_document_metadata(uuid,text,boolean,timestamptz,timestamptz,text),public.correct_document_metadata(uuid,text,boolean,timestamptz,timestamptz,text)
+ to authenticated;
+notify pgrst,'reload schema';
+-- Correct folder labels without changing access, ownership or content.
+create or replace function private.rename_document_folder(
+  p_folder_id uuid,p_name text,p_correction_reason text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+  target public.document_folders%rowtype;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if length(trim(coalesce(p_correction_reason,''))) not between 3 and 500 then
+    raise exception 'correction_reason_required' using errcode='22023';
+  end if;
+  if length(trim(coalesce(p_name,''))) not between 1 and 120 then
+    raise exception 'invalid_folder_name' using errcode='22023';
+  end if;
+  select * into target from public.document_folders
+    where id=p_folder_id and organization_id=org and archived_at is null for update;
+  if target.id is null or not private.can_access_document_folder(target.id)
+    or (target.scope='personal' and target.owner_profile_id is distinct from me) then
+    raise exception 'folder_not_available' using errcode='42501';
+  end if;
+  update public.document_folders set name=trim(p_name) where id=target.id;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(org,me,'document.folder_renamed','document_folder',target.id,
+      jsonb_build_object('reason',trim(p_correction_reason),
+        'before',jsonb_build_object('name',target.name),'after',jsonb_build_object('name',trim(p_name))));
+  return target.id;
+end $$;
+create or replace function public.rename_document_folder(p_folder_id uuid,p_name text,p_correction_reason text)
+returns uuid language sql security invoker set search_path=pg_catalog,public begin atomic
+  select private.rename_document_folder(p_folder_id,p_name,p_correction_reason);
+end;
+revoke all on function private.rename_document_folder(uuid,text,text),public.rename_document_folder(uuid,text,text)
+  from public,anon,authenticated,service_role;
+grant execute on function private.rename_document_folder(uuid,text,text),public.rename_document_folder(uuid,text,text)
+  to authenticated;
+notify pgrst,'reload schema';
+
+-- ===== supabase/migrations/20260916080340_super_admin_fleet_corrections.sql =====
+-- Super Admin can correct existing fleet data while preserving original actors
+-- and an audit trail. Existing operational creation/completion remains available.
+alter table public.vehicle_maintenance_events add column if not exists provider text;
+
+create or replace function public.save_vehicle_maintenance_event(
+  p_event_id uuid, p_vehicle_id uuid, p_event_type text, p_title text,
+  p_due_on date, p_due_mileage integer, p_status text, p_provider text,
+  p_notes text, p_completed_on date, p_completed_mileage integer
+)
+returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); result uuid;
+begin
+  if me is null or not private.has_permission('fleet.manage') or
+    (p_event_id is not null and not private.has_system_role(array['super_admin'])) then
+    raise exception 'permission_denied' using errcode='42501';
+  end if;
+  if not exists(select 1 from public.vehicles where id=p_vehicle_id and organization_id=org) then
+    raise exception 'vehicle_not_found' using errcode='P0002';
+  end if;
+  if p_event_id is null then
+    insert into public.vehicle_maintenance_events(organization_id,vehicle_id,event_type,title,due_on,due_mileage,status,provider,notes,completed_on,completed_mileage,created_by)
+    values(org,p_vehicle_id,p_event_type,trim(p_title),p_due_on,p_due_mileage,p_status,nullif(trim(p_provider),''),nullif(trim(p_notes),''),p_completed_on,p_completed_mileage,me)
+    returning id into result;
+  else
+    perform 1 from public.vehicle_maintenance_events where id=p_event_id and organization_id=org for update;
+    if not found then raise exception 'maintenance_not_found' using errcode='P0002'; end if;
+    update public.vehicle_maintenance_events set vehicle_id=p_vehicle_id,event_type=p_event_type,title=trim(p_title),
+      due_on=p_due_on,due_mileage=p_due_mileage,status=p_status,provider=nullif(trim(p_provider),''),notes=nullif(trim(p_notes),''),
+      completed_on=p_completed_on,completed_mileage=p_completed_mileage
+    where id=p_event_id and organization_id=org returning id into result;
+  end if;
+  return result;
+end;
+$$;
+
+create or replace function private.guard_vehicle_maintenance_event()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if auth.uid() is null then return new; end if;
+  if me is null or new.organization_id<>org or not exists(
+    select 1 from public.vehicles v where v.id=new.vehicle_id and v.organization_id=org
+  ) then raise exception 'maintenance_organization_mismatch' using errcode='23514'; end if;
+  if not private.has_permission('fleet.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if tg_op='INSERT' then
+    new.created_by:=me;
+  else
+    new.organization_id:=old.organization_id;
+    new.created_by:=old.created_by;
+    new.created_at:=old.created_at;
+    -- Ordinary managers retain completion of open events, but not corrections.
+    if not private.has_system_role(array['super_admin']) and not (
+      old.status in ('planned','due') and new.status='completed'
+      and (to_jsonb(new)-array['status','completed_on','completed_mileage','updated_at'])
+        =(to_jsonb(old)-array['status','completed_on','completed_mileage','updated_at'])
+    ) then raise exception 'permission_denied' using errcode='42501'; end if;
+  end if;
+  if new.event_type is null or new.event_type not in ('service','inspection','repair','tyres','other')
+    or new.status is null or new.status not in ('planned','due','completed','cancelled')
+    or new.title is null or length(trim(new.title)) not between 2 and 160
+    or coalesce(new.due_mileage,0) not between 0 and 9999999
+    or coalesce(new.completed_mileage,0) not between 0 and 9999999
+    or length(coalesce(new.provider,''))>160 or length(coalesce(new.notes,''))>2000
+    or (new.status in ('planned','due') and new.due_on is null and new.due_mileage is null)
+    or (new.status='completed' and (new.completed_on is null or new.completed_on>current_date))
+  then raise exception 'invalid_maintenance_data' using errcode='22023'; end if;
+  if new.status<>'completed' then new.completed_on:=null; new.completed_mileage:=null; end if;
+  return new;
+end;
+$$;
+create or replace function private.audit_vehicle_maintenance_event()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if private.current_profile_id() is not null then
+    insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+    values(new.organization_id,private.current_profile_id(),'fleet.maintenance_saved','vehicle_maintenance_event',new.id,
+      jsonb_build_object('before',case when tg_op='UPDATE' then to_jsonb(old) else null end,'after',to_jsonb(new)));
+  end if;
+  return new;
+end;
+$$;
+create trigger audit_vehicle_maintenance_event after insert or update on public.vehicle_maintenance_events
+for each row execute function private.audit_vehicle_maintenance_event();
+
+create or replace function public.correct_vehicle_damage_report(
+  p_report_id uuid,p_vehicle_id uuid,p_occurred_on date,p_description text,p_status text
+)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_description is null or length(trim(p_description)) not between 10 and 4000
+    or p_occurred_on>current_date or p_status is null or p_status not in ('reported','reviewing','repair_planned','resolved','rejected')
+  then raise exception 'invalid_damage_data' using errcode='22023'; end if;
+  if not exists(select 1 from public.vehicles where id=p_vehicle_id and organization_id=org) then raise exception 'vehicle_not_found' using errcode='P0002'; end if;
+  perform 1 from public.vehicle_damage_reports where id=p_report_id and organization_id=org for update;
+  if not found then raise exception 'damage_report_not_found' using errcode='P0002'; end if;
+  update public.vehicle_damage_reports set vehicle_id=p_vehicle_id,occurred_on=p_occurred_on,description=trim(p_description),status=p_status
+  where id=p_report_id and organization_id=org;
+end;
+$$;
+
+create or replace function private.guard_vehicle_damage_report()
+returns trigger language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id();
+begin
+  if auth.uid() is null then return new; end if;
+  if me is null or new.organization_id<>org or not exists(
+    select 1 from public.vehicles v where v.id=new.vehicle_id and v.organization_id=org
+  ) then raise exception 'damage_report_organization_mismatch' using errcode='23514'; end if;
+  if tg_op='INSERT' then
+    new.reported_by:=me; new.status:='reported'; new.resolved_by:=null; new.resolved_at:=null;
+  else
+    new.organization_id:=old.organization_id; new.reported_by:=old.reported_by; new.created_at:=old.created_at;
+    if (new.vehicle_id,new.occurred_on,new.description) is distinct from (old.vehicle_id,old.occurred_on,old.description)
+      and not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+    if new.status='resolved' and old.status<>'resolved' then new.resolved_by:=me; new.resolved_at:=now();
+    elsif new.status<>'resolved' then new.resolved_by:=null; new.resolved_at:=null;
+    else new.resolved_by:=old.resolved_by; new.resolved_at:=old.resolved_at; end if;
+    if new is distinct from old then
+      insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+      values(org,me,'fleet.damage_updated','vehicle_damage_report',old.id,jsonb_build_object('before',to_jsonb(old),'after',to_jsonb(new)));
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.correct_mileage_submission(
+  p_submission_id uuid,p_mileage integer,p_read_on date,p_status text,p_comment text
+)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); target public.mileage_submissions%rowtype;
+  saved public.mileage_submissions%rowtype; vehicle_mileage integer; prior integer; following integer; verified_max integer;
+begin
+  if me is null or not private.has_system_role(array['super_admin']) then raise exception 'permission_denied' using errcode='42501'; end if;
+  if p_mileage is null or p_mileage not between 0 and 9999999 or p_read_on is null or p_read_on>current_date
+    or p_status is null or p_status not in ('verified','rejected')
+    or p_comment is null or length(trim(p_comment)) not between 6 and 1000
+  then raise exception 'invalid_mileage_correction' using errcode='22023'; end if;
+  select * into target from public.mileage_submissions where id=p_submission_id and organization_id=org;
+  if target.id is null then raise exception 'mileage_submission_not_found' using errcode='P0002'; end if;
+  -- Same lock as submission creation prevents races with a second monthly entry.
+  perform pg_advisory_xact_lock(hashtextextended(org::text||target.vehicle_id::text,0));
+  select * into target from public.mileage_submissions where id=p_submission_id and organization_id=org for update;
+  select current_mileage into vehicle_mileage from public.vehicles where id=target.vehicle_id and organization_id=org for update;
+  if not found then raise exception 'vehicle_not_found' using errcode='P0002'; end if;
+  if exists(select 1 from public.mileage_submissions where vehicle_id=target.vehicle_id and id<>target.id
+    and reporting_month=date_trunc('month',p_read_on)::date
+    and (profile_id=target.profile_id or (status<>'rejected' and p_status<>'rejected')))
+  then raise exception 'monthly_submission_exists' using errcode='23505'; end if;
+  select max(mileage) into prior from public.mileage_submissions where vehicle_id=target.vehicle_id and id<>target.id
+    and status not in ('rejected','corrected') and read_on<=p_read_on;
+  select min(mileage) into following from public.mileage_submissions where vehicle_id=target.vehicle_id and id<>target.id
+    and status not in ('rejected','corrected') and read_on>=p_read_on;
+  if p_status='verified' and ((prior is not null and p_mileage<prior) or (following is not null and p_mileage>following)) then
+    raise exception 'mileage_conflicts_with_history' using errcode='22023'; end if;
+  update public.mileage_submissions set mileage=p_mileage,read_on=p_read_on,status=p_status,
+    previous_mileage=prior,flagged_extreme_jump=coalesce(p_mileage-prior>5000,false),
+    reviewed_by=me,reviewed_at=now(),review_note=trim(p_comment)
+  where id=target.id returning * into saved;
+  select max(mileage) into verified_max from public.mileage_submissions where vehicle_id=target.vehicle_id and status='verified';
+  if vehicle_mileage=target.mileage and target.status='verified' then
+    update public.vehicles set current_mileage=greatest(coalesce(verified_max,0),coalesce(prior,target.previous_mileage,0)) where id=target.vehicle_id;
+  elsif p_status='verified' then
+    update public.vehicles set current_mileage=greatest(current_mileage,p_mileage) where id=target.vehicle_id;
+  end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'mileage.corrected','mileage_submission',target.id,
+    jsonb_build_object('before',to_jsonb(target),'after',to_jsonb(saved),'reason',trim(p_comment),'previous_vehicle_mileage',vehicle_mileage));
+end;
+$$;
+
+revoke all on function public.save_vehicle_maintenance_event(uuid,uuid,text,text,date,integer,text,text,text,date,integer) from public,anon;
+revoke all on function public.correct_vehicle_damage_report(uuid,uuid,date,text,text) from public,anon;
+revoke all on function public.correct_mileage_submission(uuid,integer,date,text,text) from public,anon;
+grant execute on function public.save_vehicle_maintenance_event(uuid,uuid,text,text,date,integer,text,text,text,date,integer) to authenticated;
+grant execute on function public.correct_vehicle_damage_report(uuid,uuid,date,text,text) to authenticated;
+grant execute on function public.correct_mileage_submission(uuid,integer,date,text,text) to authenticated;
+revoke all on function private.guard_vehicle_maintenance_event() from public,anon,authenticated,service_role;
+revoke all on function private.audit_vehicle_maintenance_event() from public,anon,authenticated,service_role;
+revoke all on function private.guard_vehicle_damage_report() from public,anon,authenticated,service_role;
+
+-- Correcting a manually entered vehicle reading may lower it, but may not
+-- invalidate verified readings. Before/after snapshots preserve assignments too.
+create or replace function public.save_vehicle(
+  p_vehicle_id uuid,
+  p_internal_name text,
+  p_license_plate text,
+  p_make text,
+  p_model text,
+  p_status text,
+  p_current_mileage integer,
+  p_next_service_on date,
+  p_assignee_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+declare me uuid:=private.current_profile_id(); org uuid:=private.current_organization_id(); result uuid; old_mileage integer; old_vehicle jsonb; old_assignments jsonb;
+begin
+  if me is null or not private.has_permission('fleet.manage') then raise exception 'permission_denied' using errcode='42501'; end if;
+  if length(trim(p_internal_name)) not between 1 and 120 or length(trim(p_license_plate)) not between 2 and 20 then raise exception 'invalid_vehicle_data' using errcode='22023'; end if;
+  if p_status not in ('active','workshop','out_of_service','sold') or p_current_mileage<0 then raise exception 'invalid_vehicle_data' using errcode='22023'; end if;
+  if p_assignee_id is not null and not exists(select 1 from public.profiles p where p.id=p_assignee_id and p.organization_id=org and p.status='active') then
+    raise exception 'assignee_not_available' using errcode='22023';
+  end if;
+  if p_status<>'active' then p_assignee_id:=null; end if;
+  if p_vehicle_id is null then
+    insert into public.vehicles(organization_id,internal_name,license_plate,make,model,status,current_mileage,next_service_on)
+    values(org,trim(p_internal_name),upper(trim(p_license_plate)),nullif(trim(p_make),''),nullif(trim(p_model),''),p_status,p_current_mileage,p_next_service_on)
+    returning id into result;
+  else
+    select current_mileage into old_mileage from public.vehicles where id=p_vehicle_id and organization_id=org for update;
+    if old_mileage is null then raise exception 'vehicle_not_found' using errcode='P0002'; end if;
+    select to_jsonb(v) into old_vehicle from public.vehicles v where v.id=p_vehicle_id;
+    select coalesce(jsonb_agg(to_jsonb(va)),'[]'::jsonb) into old_assignments from public.vehicle_assignments va where va.vehicle_id=p_vehicle_id;
+    if p_current_mileage<old_mileage then
+      if not private.has_system_role(array['super_admin']) then raise exception 'mileage_cannot_decrease' using errcode='22023'; end if;
+      if exists(select 1 from public.mileage_submissions where vehicle_id=p_vehicle_id and status='verified' and mileage>p_current_mileage) then
+        raise exception 'mileage_conflicts_with_history' using errcode='22023'; end if;
+    end if;
+    update public.vehicles set internal_name=trim(p_internal_name),license_plate=upper(trim(p_license_plate)),
+      make=nullif(trim(p_make),''),model=nullif(trim(p_model),''),status=p_status,current_mileage=p_current_mileage,next_service_on=p_next_service_on
+    where id=p_vehicle_id returning id into result;
+  end if;
+  delete from public.vehicle_assignments where vehicle_id=result and valid_until is null and valid_from=current_date;
+  update public.vehicle_assignments set valid_until=current_date-1 where vehicle_id=result and valid_until is null and valid_from<current_date;
+  if p_assignee_id is not null then
+    delete from public.vehicle_assignments where profile_id=p_assignee_id and primary_assignment and valid_until is null and valid_from=current_date;
+    update public.vehicle_assignments set valid_until=current_date-1 where profile_id=p_assignee_id and primary_assignment and valid_until is null and valid_from<current_date;
+    insert into public.vehicle_assignments(organization_id,vehicle_id,profile_id,valid_from,primary_assignment)
+    values(org,result,p_assignee_id,current_date,true);
+  end if;
+  insert into public.audit_logs(organization_id,actor_id,action,entity_type,entity_id,metadata)
+  values(org,me,'vehicle.saved','vehicle',result,jsonb_build_object('status',p_status,'assigned',p_assignee_id is not null,'before',old_vehicle,'before_assignments',old_assignments,'after',(select to_jsonb(v) from public.vehicles v where v.id=result),'after_assignments',(select coalesce(jsonb_agg(to_jsonb(va)),'[]'::jsonb) from public.vehicle_assignments va where va.vehicle_id=result)));
+  return result;
+end;
+$$;
+
+-- ===== supabase/migrations/20260916101245_restrict_fleet_rpc_service_role_access.sql =====
+-- Hosted projects can grant service_role EXECUTE through default privileges.
+-- These user-facing mutations must keep the tested caller-only entry points.
+-- The RPC bodies independently require a real authorized organization member.
+revoke all on function public.correct_mileage_submission(uuid,integer,date,text,text)
+  from service_role;
+revoke all on function public.correct_vehicle_damage_report(uuid,uuid,date,text,text)
+  from service_role;
+revoke all on function public.save_vehicle_maintenance_event(uuid,uuid,text,text,date,integer,text,text,text,date,integer)
+  from service_role;
+
+-- ===== supabase/migrations/20260917073037_native_push_devices_and_audio.sql =====
+-- Only explicitly granted private functions are callable; private is not an
+-- exposed PostgREST schema. Wrappers below remain SECURITY INVOKER.
+grant usage on schema private to authenticated,service_role;
+
+-- Native registration extends the existing device registry. Raw provider tokens
+-- remain server-only; an authenticated RPC binds every token to a live session.
+alter table public.user_devices
+  add column installation_id uuid,
+  add column auth_session_id uuid,
+  add column push_environment text not null default 'production'
+    check (push_environment in ('development','production')),
+  add column app_version text check (length(app_version)<=32);
+alter table public.user_devices
+  drop constraint user_devices_profile_id_push_token_hash_key;
+-- Legacy native registrations have no verified session binding. They must opt
+-- in again; web registrations are left intact.
+update public.user_devices set revoked_at=coalesce(revoked_at,now()),push_token=null
+  where platform in ('ios','android');
+create unique index user_devices_installation_idx on public.user_devices(installation_id)
+  where installation_id is not null;
+create unique index user_devices_active_token_idx
+  on public.user_devices(platform,push_environment,push_token_hash)
+  where revoked_at is null and platform in ('ios','android') and push_token_hash is not null;
+create index user_devices_session_idx on public.user_devices(auth_session_id)
+  where revoked_at is null;
+
+revoke all on public.user_devices from anon,authenticated;
+grant select(id,organization_id,profile_id,platform,device_label,last_seen_at,
+  revoked_at,created_at,updated_at,installation_id,push_environment,app_version)
+  on public.user_devices to authenticated;
+grant select,insert,update,delete on public.user_devices to service_role;
+drop policy user_devices_own on public.user_devices;
+create policy user_devices_own_read on public.user_devices for select to authenticated
+  using (organization_id=(select private.current_organization_id())
+    and profile_id=(select private.current_profile_id()));
+
+create function private.register_push_device(
+  p_installation_id uuid,p_platform text,p_push_token text,
+  p_push_environment text,p_app_version text
+) returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  me uuid:=private.current_profile_id();
+  org uuid:=private.current_organization_id();
+  session_id uuid;
+  token_hash text;
+  result uuid;
+begin
+  if auth.uid() is null or me is null or org is null then
+    raise exception 'active_account_required' using errcode='42501';
+  end if;
+  begin session_id:=nullif(auth.jwt()->>'session_id','')::uuid;
+  exception when invalid_text_representation then
+    raise exception 'valid_session_required' using errcode='42501';
+  end;
+  if session_id is null or not exists(select 1 from auth.sessions s
+    where s.id=session_id and s.user_id=auth.uid()
+      and (s.not_after is null or s.not_after>now())) then
+    raise exception 'valid_session_required' using errcode='42501';
+  end if;
+  if p_installation_id is null or p_platform is null or p_platform not in ('ios','android')
+    or p_push_environment is null or p_push_environment not in ('development','production')
+    or p_push_token is null or length(p_push_token) not between 32 and 4096
+    or p_push_token !~ '^[A-Za-z0-9_:-]+$'
+    or (p_platform='ios' and (length(p_push_token) not between 64 and 256 or p_push_token !~ '^[a-fA-F0-9]+$'))
+    or length(coalesce(p_app_version,''))>32 then
+    raise exception 'invalid_push_registration' using errcode='22023';
+  end if;
+  if p_platform='ios' then p_push_token:=lower(p_push_token); end if;
+  token_hash:=encode(sha256(convert_to(p_push_token,'UTF8')),'hex');
+  -- Serializes concurrent rotation/reassignment; no token can have two owners.
+  perform pg_advisory_xact_lock(hashtextextended('native_push_registration',0));
+  update public.user_devices set revoked_at=now(),push_token=null,updated_at=now()
+    where platform=p_platform and push_environment=p_push_environment
+      and push_token_hash=token_hash and installation_id is distinct from p_installation_id
+      and revoked_at is null;
+  if (select count(*) from public.user_devices where profile_id=me and revoked_at is null
+    and platform in ('ios','android') and installation_id is distinct from p_installation_id)>=10 then
+    raise exception 'device_limit_reached' using errcode='22023';
+  end if;
+  insert into public.user_devices(organization_id,profile_id,platform,push_token,
+    push_token_hash,installation_id,auth_session_id,push_environment,app_version)
+  values(org,me,p_platform,p_push_token,token_hash,p_installation_id,session_id,
+    p_push_environment,p_app_version)
+  on conflict(installation_id) where installation_id is not null do update set
+    organization_id=excluded.organization_id,profile_id=excluded.profile_id,
+    platform=excluded.platform,push_token=excluded.push_token,push_token_hash=excluded.push_token_hash,
+    auth_session_id=excluded.auth_session_id,push_environment=excluded.push_environment,
+    app_version=excluded.app_version,revoked_at=null,last_seen_at=now(),updated_at=now()
+  returning id into result;
+  return result;
+end;
+$$;
+create function public.register_push_device(
+  p_installation_id uuid,p_platform text,p_push_token text,
+  p_push_environment text default 'production',p_app_version text default null
+) returns uuid language sql security invoker set search_path=pg_catalog as $$
+  select private.register_push_device($1,$2,$3,$4,$5)
+$$;
+
+create function private.revoke_push_device(p_installation_id uuid)
+returns void language plpgsql security definer set search_path=pg_catalog,public as $$
+begin
+  if auth.uid() is null then raise exception 'authentication_required' using errcode='42501'; end if;
+  -- Allow a now-suspended account to remove its own device too.
+  update public.user_devices d set revoked_at=now(),push_token=null,updated_at=now()
+  from public.profiles p where p.id=d.profile_id and p.auth_user_id=auth.uid()
+    and d.installation_id=p_installation_id;
+end;
+$$;
+create function public.revoke_push_device(p_installation_id uuid)
+returns void language sql security invoker set search_path=pg_catalog as $$
+  select private.revoke_push_device($1)
+$$;
+revoke all on function private.register_push_device(uuid,text,text,text,text),
+  public.register_push_device(uuid,text,text,text,text),private.revoke_push_device(uuid),
+  public.revoke_push_device(uuid) from public,anon,authenticated,service_role;
+grant execute on function private.register_push_device(uuid,text,text,text,text),
+  public.register_push_device(uuid,text,text,text,text),private.revoke_push_device(uuid),
+  public.revoke_push_device(uuid) to authenticated;
+
+-- Per-device receipts avoid re-sending successfully accepted pushes when a
+-- second device fails transiently. Never exposed to any client role.
+create table public.push_delivery_receipts (
+  delivery_id uuid not null references public.notification_deliveries on delete cascade,
+  device_id uuid not null references public.user_devices on delete cascade,
+  sent_at timestamptz not null default now(),
+  provider_message_id text,
+  primary key(delivery_id,device_id)
+);
+alter table public.push_delivery_receipts enable row level security;
+revoke all on public.push_delivery_receipts from public,anon,authenticated;
+grant select,insert,update,delete on public.push_delivery_receipts to service_role;
+
+create function private.active_push_devices(p_profile_id uuid)
+returns table(id uuid,platform text,push_token text,push_environment text)
+language sql stable security definer set search_path=pg_catalog,public as $$
+  select d.id,d.platform,d.push_token,d.push_environment from public.user_devices d
+  join public.profiles p on p.id=d.profile_id and p.status='active'
+    and p.organization_id=d.organization_id
+  join public.organizations o on o.id=d.organization_id and o.active
+  join auth.sessions s on s.id=d.auth_session_id and s.user_id=p.auth_user_id
+  where d.profile_id=$1 and d.revoked_at is null and d.push_token is not null
+    and d.platform in ('ios','android') and d.last_seen_at>now()-interval '60 days'
+    and (s.not_after is null or s.not_after>now())
+$$;
+create function public.active_push_devices(p_profile_id uuid)
+returns table(id uuid,platform text,push_token text,push_environment text)
+language sql stable security invoker set search_path=pg_catalog as $$
+  select * from private.active_push_devices($1)
+$$;
+revoke all on function private.active_push_devices(uuid),public.active_push_devices(uuid)
+  from public,anon,authenticated,service_role;
+grant execute on function private.active_push_devices(uuid),public.active_push_devices(uuid)
+  to service_role;
+
+create function public.claim_notification_batch(p_limit integer default 100)
+returns table(id uuid,channel text,attempt_count smallint,notification_id uuid,
+  profile_id uuid,organization_id uuid,target_path text)
+language sql security invoker set search_path=pg_catalog,public as $$
+  with candidates as (
+    select d.id from public.notification_deliveries d where d.status='pending'
+      and (d.next_attempt_at is null or d.next_attempt_at<=now())
+    order by d.created_at for update skip locked limit greatest(1,least(p_limit,10))
+  ), claimed as (
+    update public.notification_deliveries d
+    set attempt_count=d.attempt_count+1,next_attempt_at=now()+interval '5 minutes'
+    from candidates c where d.id=c.id
+    returning d.id,d.channel,d.attempt_count,d.notification_id,d.organization_id
+  ) select c.id,c.channel,c.attempt_count,c.notification_id,n.profile_id,
+      c.organization_id,n.target_path
+    from claimed c join public.notifications n on n.id=c.notification_id
+$$;
+revoke all on function public.claim_notification_batch(integer) from public,anon,authenticated;
+grant execute on function public.claim_notification_batch(integer) to service_role;
+
+-- Chat audio stays under the existing membership, private storage, 10 MiB and
+-- metadata-reference controls; medical/employee document buckets are unchanged.
+alter table public.message_attachments drop constraint message_attachments_mime_type_check;
+alter table public.message_attachments add constraint message_attachments_mime_type_check
+  check (mime_type in ('image/jpeg','image/png','application/pdf',
+    'audio/mp4','audio/webm','audio/aac','audio/ogg'));
+update storage.buckets set allowed_mime_types=array['image/jpeg','image/png',
+  'application/pdf','audio/mp4','audio/webm','audio/aac','audio/ogg'],
+  file_size_limit=10485760,public=false where id='message-attachments';
+notify pgrst,'reload schema';
+
 -- ===== supabase/seed.sql =====
 -- Reference data only. Auth users are created by the documented bootstrap script, never with seeded passwords.
 insert into public.permissions(key,description) values
-('dashboard.view','Dashboard anzeigen'),('directory.view','Mitarbeiterverzeichnis anzeigen'),('users.view','Benutzer anzeigen'),('users.manage','Benutzer verwalten'),('roles.view','Rollen anzeigen'),('roles.manage','Rollen verwalten'),('teams.manage','Teams verwalten'),('messages.use','Nachrichten verwenden'),('messages.moderate','Moderationszugriff'),('news.view','News anzeigen'),('news.create','News erstellen'),('news.publish','News veröffentlichen'),('news.manage','News verwalten'),('schedule.view_own','Eigenen Plan anzeigen'),('schedule.view_team','Teamplan anzeigen'),('schedule.manage','Plan verwalten'),('schedule.publish','Plan veröffentlichen'),('leave.create_own','Eigenen Urlaub beantragen'),('leave.view_team','Teamanträge anzeigen'),('leave.approve','Urlaub genehmigen'),('leave.manage','Urlaub verwalten'),('sick_leave.create_own','Eigene Krankmeldung erstellen'),('sick_leave.view_status','Abwesenheitsstatus anzeigen'),('sick_leave.manage','Krankmeldungen verwalten'),('sick_leave.view_certificates','Atteste abrufen'),('documents.view_own','Eigene Dokumente anzeigen'),('documents.view_shared','Freigegebene Dokumente anzeigen'),('documents.manage','Dokumente verwalten'),('documents.manage_employee_files','Mitarbeiterdokumente verwalten'),('fleet.view_own','Eigenes Fahrzeug anzeigen'),('fleet.view_all','Fuhrpark anzeigen'),('fleet.manage','Fuhrpark verwalten'),('mileage.submit_own','Eigenen Kilometerstand melden'),('mileage.manage','Kilometerstände verwalten'),('materials.create_own','Material anfordern'),('materials.view_team','Team-Anforderungen anzeigen'),('materials.approve','Anforderungen freigeben'),('materials.manage','Anforderungen verwalten'),('birthdays.view_admin_notifications','Geburtstagshinweise anzeigen'),('notifications.manage_templates','Benachrichtigungen verwalten'),('audit.view','Audit anzeigen'),('settings.manage','Einstellungen verwalten'),('integrations.manage','Integrationen verwalten') on conflict do nothing;
+('dashboard.view','Dashboard anzeigen'),('directory.view','Mitarbeiterverzeichnis anzeigen'),('users.view','Benutzer anzeigen'),('users.manage','Benutzer verwalten'),('roles.view','Rollen anzeigen'),('roles.manage','Rollen verwalten'),('teams.manage','Teams verwalten'),('messages.use','Nachrichten verwenden'),('messages.moderate','Moderationszugriff'),('news.view','News anzeigen'),('news.create','News erstellen'),('news.publish','News veröffentlichen'),('news.manage','News verwalten'),('schedule.view_own','Eigenen Plan anzeigen'),('schedule.view_team','Teamplan anzeigen'),('schedule.manage','Plan verwalten'),('schedule.publish','Plan veröffentlichen'),('leave.create','Urlaubsanträge für Mitarbeiter anlegen (nur Admin)'),('leave.view_own','Eigene Urlaubsanträge anzeigen'),('leave.view_team','Teamanträge anzeigen'),('leave.approve','Urlaub genehmigen'),('leave.manage','Urlaub verwalten'),('sick_leave.create','Krankmeldungen für Mitarbeiter anlegen (nur Admin)'),('sick_leave.view_own','Eigene Krankmeldungen anzeigen'),('sick_leave.view_status','Abwesenheitsstatus anzeigen'),('sick_leave.manage','Krankmeldungen verwalten'),('sick_leave.view_certificates','Atteste abrufen'),('documents.view_own','Eigene Dokumente anzeigen'),('documents.view_shared','Freigegebene Dokumente anzeigen'),('documents.manage','Dokumente verwalten'),('documents.manage_employee_files','Mitarbeiterdokumente verwalten'),('fleet.view_own','Eigenes Fahrzeug anzeigen'),('fleet.view_all','Fuhrpark anzeigen'),('fleet.manage','Fuhrpark verwalten'),('mileage.submit_own','Eigenen Kilometerstand melden'),('mileage.manage','Kilometerstände verwalten'),('materials.create_own','Material anfordern'),('materials.view_team','Team-Anforderungen anzeigen'),('materials.approve','Anforderungen freigeben'),('materials.manage','Anforderungen verwalten'),('birthdays.view_admin_notifications','Geburtstagshinweise anzeigen'),('notifications.manage_templates','Benachrichtigungen verwalten'),('audit.view','Audit anzeigen'),('settings.manage','Einstellungen verwalten'),('integrations.manage','Integrationen verwalten') on conflict do nothing;
 
 insert into public.organizations(id,name,slug) values('00000000-0000-4000-8000-000000000001','Alberring Pflegedienst (Demo)','alberring-demo') on conflict do nothing;
 insert into public.organization_settings(organization_id) values('00000000-0000-4000-8000-000000000001') on conflict do nothing;
 insert into public.roles(id,organization_id,name,system_key) values
 ('10000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','Super Admin','super_admin'),
 ('10000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','Mitarbeiter','employee'),
-('10000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','Personal / HR','hr'),
-('10000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000001','Disposition','dispatch') on conflict do nothing;
+('10000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000001','Teamleitung','team_lead') on conflict do nothing;
 insert into public.role_permissions(role_id,permission_key) select '10000000-0000-4000-8000-000000000001',key from public.permissions on conflict do nothing;
-insert into public.role_permissions(role_id,permission_key) select '10000000-0000-4000-8000-000000000002',key from public.permissions where key in ('dashboard.view','directory.view','messages.use','news.view','schedule.view_own','leave.create_own','sick_leave.create_own','documents.view_own','documents.view_shared','fleet.view_own','mileage.submit_own','materials.create_own') on conflict do nothing;
-insert into public.role_permissions(role_id,permission_key) select '10000000-0000-4000-8000-000000000003',key from public.permissions where key in ('dashboard.view','directory.view','users.view','leave.view_team','leave.approve','leave.manage','sick_leave.manage','sick_leave.view_certificates','documents.manage_employee_files') on conflict do nothing;
-insert into public.role_permissions(role_id,permission_key) select '10000000-0000-4000-8000-000000000004',key from public.permissions where key in ('dashboard.view','directory.view','schedule.view_team','schedule.manage','schedule.publish','sick_leave.view_status','fleet.view_all') on conflict do nothing;
+insert into public.role_permissions(role_id,permission_key) select '10000000-0000-4000-8000-000000000002',key from public.permissions where key in ('dashboard.view','directory.view','messages.use','news.view','schedule.view_own','leave.view_own','sick_leave.view_own','documents.view_own','documents.view_shared','fleet.view_own','mileage.submit_own','materials.create_own') on conflict do nothing;
 insert into public.teams(id,organization_id,name,location_name) values
 ('20000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','Team Nord','Hauptstelle'),
 ('20000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','Team Süd','Außenstelle Süd') on conflict do nothing;

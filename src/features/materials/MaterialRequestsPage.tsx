@@ -248,7 +248,7 @@ export function MaterialRequestsPage() {
         }
       />
 
-      {editor && canCreate ? (
+      {editor && (canCreate || (editor !== "new" && has("data.correct"))) ? (
         <MaterialEditor
           request={editor === "new" ? null : editor}
           onClose={() => setEditor(null)}
@@ -405,13 +405,16 @@ export function MaterialRequestsPage() {
                 ) : null}
                 <MaterialTimeline request={request} />
                 <div className="wf-card-actions">
-                  {canEditDraft ? (
+                  {canEditDraft || has("data.correct") ? (
                     <button
                       type="button"
                       className="wf-secondary"
                       onClick={() => setEditor(request)}
                     >
-                      <Pencil size={16} /> Entwurf bearbeiten
+                      <Pencil size={16} />{" "}
+                      {canEditDraft
+                        ? "Entwurf bearbeiten"
+                        : "Daten korrigieren"}
                     </button>
                   ) : null}
                   {canCancel ? (
@@ -481,6 +484,14 @@ function MaterialEditor({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { has, appSession } = useAuth();
+  const correcting = Boolean(
+    request &&
+    has("data.correct") &&
+    (request.status !== "draft" ||
+      request.requester_id !== appSession?.profile.id),
+  );
+  const [correctionReason, setCorrectionReason] = useState("");
   const {
     register,
     handleSubmit,
@@ -505,17 +516,26 @@ function MaterialEditor({
       values: MaterialFormValues;
       status: "draft" | "submitted";
     }) => {
-      const { data, error } = await supabase.rpc("save_material_request", {
-        p_request_id: request?.id ?? null,
-        p_category: values.category,
-        p_item: values.item.trim(),
-        p_quantity: values.quantity,
-        p_unit: values.unit,
-        p_priority: values.priority,
-        p_needed_on: values.neededOn || null,
-        p_reason: values.reason.trim() || null,
-        p_status: status,
-      });
+      if (correcting && correctionReason.trim().length < 3)
+        throw new Error(
+          "Bitte einen Korrekturgrund mit mindestens 3 Zeichen angeben.",
+        );
+      const { data, error } = await supabase.rpc(
+        correcting ? "correct_material_request" : "save_material_request",
+        {
+          p_request_id: request?.id ?? null,
+          p_category: values.category,
+          p_item: values.item.trim(),
+          p_quantity: values.quantity,
+          p_unit: values.unit,
+          p_priority: values.priority,
+          p_needed_on: values.neededOn || null,
+          p_reason: values.reason.trim() || null,
+          ...(correcting
+            ? { p_correction_reason: correctionReason.trim() }
+            : { p_status: status }),
+        },
+      );
       if (error) throw error;
       return data as string;
     },
@@ -528,7 +548,13 @@ function MaterialEditor({
     handleSubmit((values) => save.mutate({ values, status }))();
   return (
     <WorkflowPanel
-      title={request ? "Entwurf bearbeiten" : "Material anfordern"}
+      title={
+        correcting
+          ? "Materialanforderung korrigieren"
+          : request
+            ? "Entwurf bearbeiten"
+            : "Material anfordern"
+      }
       description="Beschreiben Sie ausschließlich den betrieblichen Bedarf. Tragen Sie keine Patienten- oder Pflegedaten ein."
       onClose={onClose}
     >
@@ -537,6 +563,24 @@ function MaterialEditor({
         onSubmit={(event) => event.preventDefault()}
         noValidate
       >
+        {correcting ? (
+          <>
+            <MutationNotice kind="info">
+              Person und Bearbeitungsstatus bleiben erhalten. Jede Korrektur
+              wird protokolliert.
+            </MutationNotice>
+            <label className="wf-field">
+              <span>Korrekturgrund</span>
+              <input
+                value={correctionReason}
+                onChange={(event) => setCorrectionReason(event.target.value)}
+                minLength={3}
+                maxLength={500}
+                required
+              />
+            </label>
+          </>
+        ) : null}
         <div className="wf-form-grid">
           <label className="wf-field">
             <span>Kategorie</span>
@@ -615,14 +659,16 @@ function MaterialEditor({
             : null}
         </MutationNotice>
         <div className="wf-form-actions">
-          <button
-            type="button"
-            className="wf-secondary"
-            onClick={() => void persist("draft")}
-            disabled={save.isPending}
-          >
-            <Save size={17} /> Als Entwurf speichern
-          </button>
+          {!correcting ? (
+            <button
+              type="button"
+              className="wf-secondary"
+              onClick={() => void persist("draft")}
+              disabled={save.isPending}
+            >
+              <Save size={17} /> Als Entwurf speichern
+            </button>
+          ) : null}
           <button
             type="button"
             className="wf-primary"
@@ -630,7 +676,11 @@ function MaterialEditor({
             disabled={save.isPending}
           >
             <ShoppingCart size={18} />
-            {save.isPending ? "Wird gespeichert …" : "Anforderung einreichen"}
+            {save.isPending
+              ? "Wird gespeichert …"
+              : correcting
+                ? "Korrektur speichern"
+                : "Anforderung einreichen"}
           </button>
         </div>
       </form>

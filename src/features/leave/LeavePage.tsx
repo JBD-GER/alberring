@@ -9,6 +9,7 @@ import {
   Clock3,
   FileCheck2,
   Plus,
+  Pencil,
   RotateCcw,
   Umbrella,
   UserRound,
@@ -30,6 +31,7 @@ import {
   WorkflowTabs,
   type StatusTone,
 } from "../../components/form/WorkflowUI";
+import { EmployeeSelect } from "../../components/form/EmployeeSelect";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 import "./leave.css";
@@ -73,6 +75,7 @@ const statusMeta: Record<LeaveStatus, { label: string; tone: StatusTone }> = {
 
 const leaveSchema = z
   .object({
+    profileId: z.uuid("Bitte eine Person auswählen."),
     leaveType: z.string().min(1, "Bitte einen Urlaubstyp wählen."),
     startsOn: z.string().min(1, "Startdatum fehlt."),
     endsOn: z.string().min(1, "Enddatum fehlt."),
@@ -119,13 +122,18 @@ export function LeavePage() {
   const { appSession, has } = useAuth();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
+  const [correctionRequest, setCorrectionRequest] =
+    useState<LeaveRequest | null>(null);
   const [tab, setTab] = useState<LeaveTab>("mine");
-  const [decisionRequest, setDecisionRequest] = useState<LeaveRequest | null>(
+  const [decisionRequestId, setDecisionRequestId] = useState<string | null>(
     null,
   );
-  const canCreate = has("leave.create_own");
-  const canViewTeam = has("leave.view_team");
+  const [savedApprovalId, setSavedApprovalId] = useState<string | null>(null);
+  const canCreate = has("leave.create");
   const canApprove = has("leave.approve") || has("leave.manage");
+  const canApproveOwn = canCreate && has("leave.manage");
+  const canViewTeam = has("leave.view_team") || canApprove;
+  const visibleTab = canViewTeam ? tab : "mine";
 
   const requestsQuery = useQuery({
     queryKey: ["leave-requests"],
@@ -165,13 +173,24 @@ export function LeavePage() {
   });
 
   const requests = requestsQuery.data ?? [];
+  const savedApproval = requests.find(
+    (request) => request.id === savedApprovalId,
+  );
   const mine = requests.filter(
     (request) => request.profile_id === appSession?.profile.id,
   );
   const team = requests.filter(
     (request) => request.profile_id !== appSession?.profile.id,
   );
-  const visible = tab === "mine" ? mine : team;
+  const visible = visibleTab === "mine" ? mine : team;
+  const decisionRequest = canApprove
+    ? requests.find(
+        (request) =>
+          request.id === decisionRequestId &&
+          (request.profile_id !== appSession?.profile.id || canApproveOwn) &&
+          (request.status === "submitted" || request.status === "review"),
+      )
+    : undefined;
   const pendingTeam = team.filter(
     (request) => request.status === "submitted" || request.status === "review",
   ).length;
@@ -181,7 +200,11 @@ export function LeavePage() {
       <WorkflowHeader
         eyebrow="Abwesenheit"
         title="Urlaub"
-        description="Urlaub transparent beantragen, Arbeitstage prüfen und den Freigabestatus verfolgen."
+        description={
+          canCreate
+            ? "Urlaubsanträge für Mitarbeitende erfassen und den Freigabestatus verfolgen."
+            : "Hier sehen Sie Ihre Urlaubsanträge und deren Status. Neue Anträge erfasst Ihre Administration."
+        }
         action={
           canCreate ? (
             <button
@@ -189,7 +212,7 @@ export function LeavePage() {
               className="wf-primary"
               onClick={() => setFormOpen(true)}
             >
-              <Plus size={19} /> Urlaub beantragen
+              <Plus size={19} /> Urlaubsantrag erfassen
             </button>
           ) : null
         }
@@ -199,14 +222,44 @@ export function LeavePage() {
         <LeaveRequestForm
           leaveTypes={availableLeaveTypes}
           onClose={() => setFormOpen(false)}
-          onSaved={() => setFormOpen(false)}
+          onSaved={(profileId) => {
+            setFormOpen(false);
+            setTab(profileId === appSession?.profile.id ? "mine" : "team");
+          }}
+        />
+      ) : null}
+      {correctionRequest && has("data.correct") ? (
+        <LeaveRequestForm
+          key={correctionRequest.id}
+          request={correctionRequest}
+          leaveTypes={availableLeaveTypes}
+          onClose={() => setCorrectionRequest(null)}
+          onSaved={() => setCorrectionRequest(null)}
         />
       ) : null}
       {decisionRequest && canApprove ? (
         <LeaveDecisionPanel
           request={decisionRequest}
-          onClose={() => setDecisionRequest(null)}
+          onClose={() => setDecisionRequestId(null)}
+          onSaved={(status) => {
+            setSavedApprovalId(
+              status === "approved" ? decisionRequest.id : null,
+            );
+            setDecisionRequestId(null);
+          }}
         />
+      ) : null}
+      {canApprove && savedApproval?.status === "review" ? (
+        <MutationNotice kind="success">
+          Ihre Freigabe wurde gespeichert. Für diesen Antrag ist noch die
+          Genehmigung einer weiteren berechtigten Person erforderlich.
+        </MutationNotice>
+      ) : null}
+      {canApprove && savedApproval?.status === "approved" ? (
+        <MutationNotice kind="success">
+          Der Urlaubsantrag ist genehmigt. Eine weitere Freigabe ist nicht
+          erforderlich.
+        </MutationNotice>
       ) : null}
 
       <div className="wf-stat-grid">
@@ -240,7 +293,7 @@ export function LeavePage() {
 
       {canViewTeam ? (
         <WorkflowTabs
-          value={tab}
+          value={visibleTab}
           onChange={setTab}
           label="Urlaubsansicht"
           options={[
@@ -261,21 +314,23 @@ export function LeavePage() {
       visible.length === 0 ? (
         <EmptyState
           title={
-            tab === "mine" ? "Noch kein Urlaubsantrag" : "Keine Team-Anträge"
+            visibleTab === "mine"
+              ? "Noch kein Urlaubsantrag"
+              : "Keine Team-Anträge"
           }
           description={
-            tab === "mine"
+            visibleTab === "mine"
               ? "Neue Anträge und ihr aktueller Status erscheinen hier."
               : "Aktuell wartet kein sichtbarer Antrag auf Bearbeitung."
           }
           action={
-            tab === "mine" && canCreate ? (
+            visibleTab === "mine" && canCreate ? (
               <button
                 type="button"
                 className="wf-secondary"
                 onClick={() => setFormOpen(true)}
               >
-                <Umbrella size={18} /> Ersten Antrag stellen
+                <Umbrella size={18} /> Antrag erfassen
               </button>
             ) : null
           }
@@ -290,6 +345,10 @@ export function LeavePage() {
             const own = request.profile_id === appSession?.profile.id;
             const canWithdraw =
               own &&
+              (request.status === "submitted" || request.status === "review");
+            const canDecide =
+              canApprove &&
+              (!own || canApproveOwn) &&
               (request.status === "submitted" || request.status === "review");
             return (
               <article className="wf-list-card leave-card" key={request.id}>
@@ -338,18 +397,32 @@ export function LeavePage() {
                   <p className="leave-note">„{request.note}“</p>
                 ) : null}
                 <LeaveTimeline request={request} />
+                {own && canApprove && !canApproveOwn && canWithdraw ? (
+                  <MutationNotice kind="info">
+                    Eigene Anträge müssen von einer anderen berechtigten Person
+                    genehmigt werden.
+                  </MutationNotice>
+                ) : null}
                 {request.decision_note && own ? (
                   <div className="leave-decision-note">
                     <strong>Hinweis zur Entscheidung</strong>
                     <p>{request.decision_note}</p>
                   </div>
                 ) : null}
-                {canWithdraw ||
-                (!own &&
-                  canApprove &&
-                  (request.status === "submitted" ||
-                    request.status === "review")) ? (
+                {canWithdraw || canDecide || has("data.correct") ? (
                   <div className="wf-card-actions">
+                    {has("data.correct") ? (
+                      <button
+                        type="button"
+                        className="wf-secondary"
+                        onClick={() => {
+                          setDecisionRequestId(null);
+                          setCorrectionRequest(request);
+                        }}
+                      >
+                        <Pencil size={16} /> Daten korrigieren
+                      </button>
+                    ) : null}
                     {canWithdraw ? (
                       <button
                         type="button"
@@ -360,11 +433,14 @@ export function LeavePage() {
                         <RotateCcw size={16} /> Antrag zurückziehen
                       </button>
                     ) : null}
-                    {!own && canApprove ? (
+                    {canDecide ? (
                       <button
                         type="button"
                         className="wf-secondary"
-                        onClick={() => setDecisionRequest(request)}
+                        onClick={() => {
+                          setSavedApprovalId(null);
+                          setDecisionRequestId(request.id);
+                        }}
                       >
                         <FileCheck2 size={17} /> Antrag bearbeiten
                       </button>
@@ -389,15 +465,18 @@ export function LeavePage() {
 }
 
 function LeaveRequestForm({
+  request,
   leaveTypes,
   onClose,
   onSaved,
 }: {
+  request?: LeaveRequest;
   leaveTypes: LeaveTypeOption[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (profileId: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const [correctionReason, setCorrectionReason] = useState("");
   const {
     register,
     handleSubmit,
@@ -408,11 +487,12 @@ function LeaveRequestForm({
   } = useForm<LeaveFormValues>({
     resolver: zodResolver(leaveSchema),
     defaultValues: {
-      leaveType: leaveTypes[0]?.code ?? "annual",
-      startsOn: todayInputValue(),
-      endsOn: todayInputValue(),
-      dayFraction: "1",
-      note: "",
+      profileId: request?.profile_id ?? "",
+      leaveType: request?.leave_type ?? leaveTypes[0]?.code ?? "annual",
+      startsOn: request?.starts_on ?? todayInputValue(),
+      endsOn: request?.ends_on ?? todayInputValue(),
+      dayFraction: request?.day_fraction === 0.5 ? "0.5" : "1",
+      note: request?.note ?? "",
     },
   });
   const startsOn = useWatch({ control, name: "startsOn" });
@@ -427,26 +507,43 @@ function LeaveRequestForm({
   );
   const submit = useMutation({
     mutationFn: async (values: LeaveFormValues) => {
-      const { data, error } = await supabase.rpc("submit_leave_request", {
-        p_leave_type: values.leaveType,
-        p_starts_on: values.startsOn,
-        p_ends_on: values.endsOn,
-        p_day_fraction: Number(values.dayFraction),
-        p_note: values.note.trim() || null,
-      });
+      if (request && correctionReason.trim().length < 3)
+        throw new Error(
+          "Bitte einen Korrekturgrund mit mindestens 3 Zeichen angeben.",
+        );
+      const { data, error } = await supabase.rpc(
+        request ? "correct_leave_request" : "create_leave_request_for_user",
+        {
+          ...(request
+            ? {
+                p_request_id: request.id,
+                p_correction_reason: correctionReason.trim(),
+              }
+            : { p_profile_id: values.profileId }),
+          p_leave_type: values.leaveType,
+          p_starts_on: values.startsOn,
+          p_ends_on: values.endsOn,
+          p_day_fraction: Number(values.dayFraction),
+          p_note: values.note.trim() || null,
+        },
+      );
       if (error) throw error;
       return data as string;
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, values) => {
       reset();
       await queryClient.invalidateQueries({ queryKey: ["leave-requests"] });
-      onSaved();
+      onSaved(values.profileId);
     },
   });
   return (
     <WorkflowPanel
-      title="Urlaub beantragen"
-      description="Die angezeigte Berechnung berücksichtigt Wochenenden. Feiertage und Ihr Arbeitszeitmodell werden beim Absenden serverseitig berücksichtigt."
+      title={request ? "Urlaubsantrag korrigieren" : "Urlaubsantrag erfassen"}
+      description={
+        request
+          ? "Korrigieren Sie die Antragsdaten. Person, Freigabestatus und bisherige Entscheidungen bleiben erhalten. Jede Änderung wird protokolliert."
+          : "Wählen Sie die Person, für die Sie den Antrag erfassen. Die Berechnung berücksichtigt Wochenenden; Feiertage und Arbeitszeitmodell werden beim Speichern berücksichtigt."
+      }
       onClose={onClose}
     >
       <form
@@ -464,6 +561,30 @@ function LeaveRequestForm({
         })}
         noValidate
       >
+        {request ? (
+          <p>
+            <strong>Mitarbeiter/in:</strong>{" "}
+            {request.profiles?.display_name ?? "Bestehende Person"}
+          </p>
+        ) : (
+          <EmployeeSelect
+            registration={register("profileId")}
+            error={errors.profileId?.message}
+            disabled={submit.isPending}
+          />
+        )}
+        {request ? (
+          <label className="wf-field">
+            <span>Korrekturgrund</span>
+            <input
+              value={correctionReason}
+              onChange={(event) => setCorrectionReason(event.target.value)}
+              minLength={3}
+              maxLength={500}
+              required
+            />
+          </label>
+        ) : null}
         <div className="wf-form-grid">
           <label className="wf-field">
             <span>Urlaubstyp</span>
@@ -471,6 +592,10 @@ function LeaveRequestForm({
               {...register("leaveType")}
               aria-invalid={Boolean(errors.leaveType)}
             >
+              {request &&
+              !leaveTypes.some((type) => type.code === request.leave_type) ? (
+                <option value={request.leave_type}>{request.leave_type}</option>
+              ) : null}
               {leaveTypes.map((type) => (
                 <option key={type.code} value={type.code}>
                   {type.name}
@@ -494,7 +619,7 @@ function LeaveRequestForm({
             <span>Von</span>
             <input
               type="date"
-              min={todayInputValue()}
+              min={request ? undefined : todayInputValue()}
               {...register("startsOn")}
               aria-invalid={Boolean(errors.startsOn)}
             />
@@ -556,7 +681,11 @@ function LeaveRequestForm({
             disabled={submit.isPending || preview <= 0}
           >
             <Umbrella size={18} />
-            {submit.isPending ? "Wird eingereicht …" : "Antrag einreichen"}
+            {submit.isPending
+              ? "Wird gespeichert …"
+              : request
+                ? "Korrektur speichern"
+                : "Antrag speichern"}
           </button>
         </div>
       </form>
@@ -567,9 +696,11 @@ function LeaveRequestForm({
 function LeaveDecisionPanel({
   request,
   onClose,
+  onSaved,
 }: {
   request: LeaveRequest;
   onClose: () => void;
+  onSaved: (status: "review" | "approved" | "rejected") => void;
 }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
@@ -584,9 +715,9 @@ function LeaveDecisionPanel({
       });
       if (error) throw error;
     },
-    onSuccess: async () => {
+    onSuccess: async (_result, status) => {
       await queryClient.invalidateQueries({ queryKey: ["leave-requests"] });
-      onClose();
+      onSaved(status);
     },
   });
   return (

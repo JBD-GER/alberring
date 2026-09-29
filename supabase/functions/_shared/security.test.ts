@@ -59,6 +59,18 @@ Deno.test("known mail delivery failures allow a manual invite link", () => {
   );
 });
 
+Deno.test(
+  "rate limits never replace the last emailed invitation with a manual token",
+  () => {
+    assertEquals(
+      shouldUseManualEmailLink(
+        new AuthApiError("Rate limit", 429, "over_email_send_rate_limit"),
+      ),
+      false,
+    );
+  },
+);
+
 Deno.test("automation calls fail closed when the secret is missing", () => {
   const previous = Deno.env.get("AUTOMATION_SECRET");
   try {

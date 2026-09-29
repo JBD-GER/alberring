@@ -380,7 +380,7 @@ select ok(
     from jsonb_array_elements(
       public.get_admin_onboarding_catalog()->'roles'
     ) role
-    where role->>'systemKey'='administration'
+    where role->>'systemKey'='team_lead'
   )
   and not exists(
     select 1

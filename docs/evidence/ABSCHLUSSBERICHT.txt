@@ -1,0 +1,52 @@
+ALBERRING CONNECT – ABSCHLUSSBERICHT, 17.09.2026
+
+UMGESETZT
+Gemeinsame Web-/iOS-/Android-Codebasis mit Capacitor; native Projekte,
+Keychain/Keystore, sichere Auth-Rücksprünge und Abmeldung, Netzwerk-/Fehlerzustände,
+kontextuelle Permissions, Standortentwurf, Kamera/Fotos, Sprachnachrichten,
+signierte Uploads, geschütztes Push-Geräteregister und APNs-/FCM-Vorbereitung.
+Versionierung, CI-/Releasevorbereitung, Security Audit und Projektdokumentation.
+
+ARCHITEKTUR
+React/Vite bleiben gemeinsam. Native Apps enthalten lokale Frontend-Assets.
+Die bestehende Web-PWA und das Supabase-Backend werden weiterverwendet.
+Keine Produktionsveröffentlichung und keine zusätzliche Hosting-Plattform.
+
+DATEIEN
+capacitor.config.ts, ios/, android/, src/services/platform/, mobile-version.json,
+.github/workflows/{native,mobile-release,web-release}.yml,
+supabase/migrations/20260917073037_native_push_devices_and_audio.sql.
+Vollständiger Abgleich gegen den übernommenen Arbeitsstand: docs/05_DATEIAENDERUNGEN.md.
+Bereits vorhandene Änderungen beibehalten; kein Commit/Push durchgeführt.
+
+TESTS
+Installation, TypeScript, ESLint, Prettier, Web-/Native-Build, Capacitor-Sync,
+Client-Secretmusterprüfung und git diff --check erfolgreich.
+166 Vitest-Tests, 12 öffentliche Playwright-Tests, 25 authentifizierte mobile
+Routen sowie Foto-/Audio-/Standortabläufe mit echtem lokalem Backend bestanden.
+Sensorwerte ausdrücklich synthetisch. 539 pgTAP-Assertions und 29 Deno-Tests
+bestanden; 13 Edge-Einstiegspunkte typgeprüft. npm Audit: 0 Befunde.
+Android Debug-APK, unsigniertes AAB und Lint erfolgreich; 2 echte
+Keystore-Instrumentationstests auf Android-36-Emulator bestanden.
+Swift-/Plist-/Projekt-Syntax geprüft; kein vollständiger iOS-SDK-Build.
+
+OFFEN
+Xcode installieren und iOS kompilieren. Physische iOS-/Android-Geräteabnahme,
+Apple-/Google-Developerkonten, APNs/Firebase, produktives Signing, echte
+Pushzustellung, Storeangaben und organisatorische Datenschutzfreigabe.
+CI vorbereitet, nicht auf GitHub ausgeführt. Keine Storefreigabe behauptet.
+
+DOKUMENTATION
+docs/01_IST_ANALYSE.md
+docs/02_SECURITY_AUDIT.md
+docs/03_RELEASE_PROZESS.md
+docs/04_AENDERUNGSDOKUMENTATION.md
+docs/05_DATEIAENDERUNGEN.md
+docs/06_ARCHITEKTUR.md
+docs/07_DATENSCHUTZ_STORE.md
+docs/08_STORE_SETUP_CHECKLISTE.md
+docs/09_ENTWICKLUNGSNACHWEIS.md
+docs/Foerderungsdokumentation_Mobile_App.md
+docs/Foerderungsdokumentation_Mobile_App.pdf
+docs/screenshots/ und docs/diagrams/gesamtarchitektur.mmd
+Prüfprotokolle und PDF-Qualitätsnachweis: docs/evidence/.

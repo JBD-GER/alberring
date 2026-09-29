@@ -1,0 +1,65 @@
+Backend security verification / Alberring Connect
+Generated UTC: 2026-09-17T08:33:00.726893+00:00
+Scope: existing local Docker Supabase; no hosted database mutation.
+Secrets, access URLs with signatures, passwords, tokens and customer data excluded.
+
+SQL regression suite
+Command: npx --yes supabase@2.111.0 test db
+Exit: 0
+All tests successful.
+Files=14, Tests=539,  1 wallclock secs ( 0.03 usr  0.01 sys +  0.04 cusr  0.03 csys =  0.11 CPU)
+Result: PASS
+
+Database security advisors
+Command: npx --yes supabase@2.111.0 db advisors --local --type security --level warn --fail-on error
+Exit: 0
+{"results":[],"message":"db advisors"}
+No issues found
+
+Database lint
+Command: npx --yes supabase@2.111.0 db lint --local --level warning --fail-on error --schema public,private
+Exit: 0
+{"results":[{"function":"public.create_role","issues":[{"level":"warning extra","message":"unused parameter \"p_name\"","sqlState":"00000"}]}],"message":"db lint"}
+
+Edge typecheck
+Command: npx --yes deno@2.9.4 check supabase/functions/create-secure-download/index.ts supabase/functions/admin-create-user/index.ts supabase/functions/process-mileage-reminders/index.ts supabase/functions/send-notification-batch/index.ts supabase/functions/admin-resend-invite/index.ts supabase/functions/admin-delete-user/index.ts supabase/functions/careville-test-connection/index.ts supabase/functions/process-birthday-reminders/index.ts supabase/functions/admin-update-employee/index.ts supabase/functions/process-scheduled-news/index.ts supabase/functions/admin-update-employee-email/index.ts supabase/functions/admin-update-user-status/index.ts supabase/functions/admin-delete-invited-user/index.ts
+Exit: 0
+Check supabase/functions/create-secure-download/index.ts
+Check supabase/functions/admin-create-user/index.ts
+Check supabase/functions/process-mileage-reminders/index.ts
+Check supabase/functions/send-notification-batch/index.ts
+Check supabase/functions/admin-resend-invite/index.ts
+Check supabase/functions/admin-delete-user/index.ts
+Check supabase/functions/careville-test-connection/index.ts
+Check supabase/functions/process-birthday-reminders/index.ts
+Check supabase/functions/admin-update-employee/index.ts
+Check supabase/functions/process-scheduled-news/index.ts
+Check supabase/functions/admin-update-employee-email/index.ts
+Check supabase/functions/admin-update-user-status/index.ts
+Check supabase/functions/admin-delete-invited-user/index.ts
+
+Edge tests exact CI permissions
+Command: npx --yes deno@2.9.4 test --allow-env=ALLOWED_ORIGINS,AUTOMATION_SECRET --permit-no-files supabase/functions
+Exit: 0
+ok | 29 passed | 0 failed (379ms)
+Check supabase/functions/_shared/download-url.test.ts
+Check supabase/functions/_shared/employee-edit.test.ts
+Check supabase/functions/_shared/http.test.ts
+Check supabase/functions/_shared/jobs.test.ts
+Check supabase/functions/_shared/push.test.ts
+Check supabase/functions/_shared/security.test.ts
+Check supabase/functions/_shared/user-deletion.test.ts
+
+Client push lifecycle regression
+Command: npm test -- src/services/platform/push.test.ts
+Exit: 0
+Test Files  1 passed (1)
+Tests  7 passed (7)
+
+Additional observed integration results:
+- Local signed photo download: HTTP 200, MIME image/jpeg, 4057 bytes.
+- Local create-secure-download: OPTIONS 204; unauthenticated POST 401.
+- Native push SQL file: 33 assertions including owner/session isolation, token rotation/revocation, grants, audio bucket and queue leases.
+- Schema pull rebuilt shadow migrations and reported No schema changes found (CLI uses exit 1 for this in-sync condition).
+- Local audit organization and profiles are explicitly artificial test fixtures in the real local backend, not app data or a mock backend.
+- APNs/FCM live delivery, signed-device secure storage and store submission remain unverified without the corresponding accounts/credentials/devices.

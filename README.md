@@ -56,3 +56,19 @@ npx supabase test db
 ```
 
 Der tatsächliche Prüfstatus und die noch offenen Produktionsaufgaben stehen in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). Architektur und Betrieb sind in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DATABASE.md](docs/DATABASE.md) und [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) dokumentiert.
+
+## Gemeinsame iOS-/Android-App
+
+Die vorhandene React-App wird zusätzlich mit Capacitor lokal in native Pakete eingebettet. Keine Remote-WebView-Website, keine zusätzliche Backend-Infrastruktur.
+
+```bash
+npm ci
+npm run build
+npm run mobile:sync
+npm run mobile:ios
+npm run mobile:android
+```
+
+`build` erzeugt die Web-PWA in `dist`; `build:native` erzeugt denselben Frontend-Code ohne Service Worker in `dist-native`. Native Builds benötigen Xcode 26+/iOS 26 SDK bzw. Java 21/Android SDK 36. `mobile-version.json` führt App-Version und Buildnummer. Ohne APNs-/Firebase-/Signing-Einrichtung bleibt Push deaktiviert.
+
+Technische Projektdokumentation: [IST-Analyse](docs/01_IST_ANALYSE.md), [Security Audit](docs/02_SECURITY_AUDIT.md), [Release-Prozess](docs/03_RELEASE_PROZESS.md), [Architektur](docs/06_ARCHITEKTUR.md), [Store-Setup](docs/08_STORE_SETUP_CHECKLISTE.md) und [Entwicklungsnachweis](docs/09_ENTWICKLUNGSNACHWEIS.md). Die zusammengeführte [Förderungsdokumentation](docs/Foerderungsdokumentation_Mobile_App.md) ergänzt echte Screenshots und das PDF im selben Verzeichnis. Verifizierte Ergebnisse und noch offene Geräte-/Storeprüfungen sind dort getrennt ausgewiesen.

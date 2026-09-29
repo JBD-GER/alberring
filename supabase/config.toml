@@ -17,6 +17,29 @@ enable_signup = false
 enable_confirmations = true
 double_confirm_changes = true
 secure_password_change = true
+# Invitation and recovery links expire after 24 hours. Set the corresponding
+# hosted Auth setting (mailer_otp_exp) to 86400 when deploying this config.
+otp_expiry = 86400
+
+[auth.email.template.invite]
+subject = "Einladung zur Alberring Mitarbeiter-App"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.recovery]
+subject = "Passwort für die Alberring Mitarbeiter-App zurücksetzen"
+content_path = "./supabase/templates/recovery.html"
+
+[functions.admin-delete-invited-user]
+verify_jwt = true
+
+[functions.admin-update-employee]
+verify_jwt = true
+
+[functions.admin-update-employee-email]
+verify_jwt = true
+
+[functions.admin-delete-user]
+verify_jwt = true
 
 # These automation endpoints authenticate their own high-entropy secret before
 # creating a service-role client. The public gateway therefore must not expect

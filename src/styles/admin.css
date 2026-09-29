@@ -54,6 +54,47 @@
   color: var(--muted);
   font-size: 13px;
 }
+.invite-expiry-hint {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.invite-expiry-notice {
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: #fff;
+  color: #172225;
+  box-shadow: 0 16px 60px #17272a33;
+}
+.invite-expiry-notice::backdrop {
+  background: #17272a70;
+}
+.invite-expiry-notice h2 {
+  margin: 8px 0 12px;
+  font-size: 22px;
+}
+.invite-expiry-notice p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.invite-expiry-preference {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+.invite-expiry-preference input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex-shrink: 0;
+}
 .role-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));

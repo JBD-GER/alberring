@@ -1,13 +1,36 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useAuth } from "../features/auth/AuthProvider";
 export function ProtectedRoute() {
-  const { session, appSession, loading, signOut } = useAuth();
+  const {
+    session,
+    appSession,
+    loading,
+    signOut,
+    sessionError,
+    refreshAppSession,
+  } = useAuth();
   const loc = useLocation();
   if (loading)
     return (
       <main className="center">
         <div className="spinner" />
         <span>Bereich wird sicher geladen …</span>
+      </main>
+    );
+  if (sessionError && !appSession)
+    return (
+      <main className="center blocked-access" role="alert">
+        <h1>Verbindung konnte nicht hergestellt werden</h1>
+        <p>{sessionError}</p>
+        <button
+          className="primary"
+          onClick={() => void refreshAppSession().catch(() => {})}
+        >
+          Erneut versuchen
+        </button>
+        <button className="secondary" onClick={() => void signOut()}>
+          Abmelden
+        </button>
       </main>
     );
   if (!session)

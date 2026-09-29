@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { disablePush } from "../../services/platform/push";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
 import type { AppSession, Profile } from "../../lib/types";
@@ -17,6 +18,7 @@ type AuthValue = {
   appSession: AppSession | null;
   loading: boolean;
   recoverySession: boolean;
+  sessionError: string;
   signOut: () => Promise<void>;
   refreshAppSession: () => Promise<void>;
   has: (key: string) => boolean;
@@ -79,10 +81,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const previousUserId = useRef<string | null>(null);
   const hydrationGeneration = useRef(0);
+  const lastAppSession = useRef<AppSession | null>(null);
+  const [sessionError, setSessionError] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [appSession, setAppSession] = useState<AppSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoverySession, setRecoverySession] = useState(false);
+  const applyAppSession = useCallback(
+    (next: AppSession | null) => {
+      const previous = lastAppSession.current;
+      if (
+        previous &&
+        (previous.profile.id !== next?.profile.id ||
+          previous.profile.organization_id !== next?.profile.organization_id ||
+          previous.profile.status !== next?.profile.status ||
+          [...previous.permissions].sort().join(",") !==
+            [...(next?.permissions ?? [])].sort().join(","))
+      ) {
+        queryClient.clear();
+      }
+      lastAppSession.current = next;
+      setAppSession(next);
+    },
+    [queryClient],
+  );
   useEffect(() => {
     let active = true;
     const hydrate = async (next: Session | null, event?: string) => {
@@ -90,15 +112,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const nextUserId = next?.user.id ?? null;
       if (previousUserId.current && previousUserId.current !== nextUserId) {
         queryClient.clear();
-        setAppSession(null);
+        applyAppSession(null);
         setRecoverySession(false);
       }
       if (event === "PASSWORD_RECOVERY") setRecoverySession(true);
       if (event === "SIGNED_OUT") setRecoverySession(false);
       previousUserId.current = nextUserId;
       setSession(next);
+      setSessionError("");
       if (!next) {
-        setAppSession(null);
+        applyAppSession(null);
         setLoading(false);
         return;
       }
@@ -106,15 +129,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const hydratedAppSession = await fetchAppSession();
         if (!active || generation !== hydrationGeneration.current) return;
-        setAppSession(hydratedAppSession);
+        applyAppSession(hydratedAppSession);
         setLoading(false);
       } catch {
         if (!active || generation !== hydrationGeneration.current) return;
-        setAppSession(null);
+        setSessionError(
+          "Kontodaten konnten nicht geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.",
+        );
+        applyAppSession(null);
         setLoading(false);
       }
     };
-    void supabase.auth.getSession().then(({ data }) => hydrate(data.session));
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) return hydrate(data.session);
+      })
+      .catch(() => {
+        if (active) {
+          setLoading(false);
+          setSessionError(
+            "Die Sitzung konnte nicht sicher wiederhergestellt werden. Bitte öffnen Sie die App erneut.",
+          );
+        }
+      });
     const { data } = supabase.auth.onAuthStateChange(
       (event, next) => void hydrate(next, event),
     );
@@ -122,11 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [queryClient]);
+  }, [applyAppSession, queryClient]);
 
   const refreshAppSession = useCallback(async () => {
     if (!session) {
-      setAppSession(null);
+      applyAppSession(null);
       return;
     }
     const generation = ++hydrationGeneration.current;
@@ -134,13 +173,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const hydratedAppSession = await fetchAppSession();
       if (generation !== hydrationGeneration.current) return;
-      setAppSession(hydratedAppSession);
+      applyAppSession(hydratedAppSession);
+      setSessionError("");
       setLoading(false);
     } catch (error) {
       if (generation === hydrationGeneration.current) setLoading(false);
       throw error;
     }
-  }, [session]);
+  }, [applyAppSession, session]);
+
+  useEffect(() => {
+    let active = true;
+    let refreshing = false;
+    const refreshPermissions = async () => {
+      if (
+        !previousUserId.current ||
+        !lastAppSession.current ||
+        refreshing ||
+        document.visibilityState === "hidden"
+      )
+        return;
+      refreshing = true;
+      const generation = hydrationGeneration.current;
+      try {
+        const next = await fetchAppSession();
+        if (!active || generation !== hydrationGeneration.current) return;
+        applyAppSession(next);
+      } catch {
+        // A transient network failure keeps the current UI; every write is
+        // still authorized by the database using the current role assignments.
+      } finally {
+        refreshing = false;
+      }
+    };
+    const refresh = () => void refreshPermissions();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(interval);
+    };
+  }, [applyAppSession]);
 
   const value = useMemo<AuthValue>(
     () => ({
@@ -148,13 +224,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       appSession,
       loading,
       recoverySession,
+      sessionError,
       signOut: async () => {
-        await supabase.auth.signOut();
+        setSessionError("");
+        try {
+          await disablePush();
+          const { error } = await supabase.auth.signOut({ scope: "local" });
+          if (error) throw error;
+          queryClient.clear();
+        } catch {
+          setSessionError(
+            "Abmelden konnte nicht vollständig abgeschlossen werden. Bitte stellen Sie eine Verbindung her und versuchen Sie es erneut.",
+          );
+        }
       },
       refreshAppSession,
       has: (key) => Boolean(appSession?.permissions.includes(key)),
     }),
-    [session, appSession, loading, recoverySession, refreshAppSession],
+    [
+      session,
+      appSession,
+      loading,
+      recoverySession,
+      sessionError,
+      refreshAppSession,
+      queryClient,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

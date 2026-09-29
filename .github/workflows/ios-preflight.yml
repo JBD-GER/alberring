@@ -1,0 +1,44 @@
+name: iOS review preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/ios-review-preparation]
+permissions:
+  contents: read
+concurrency:
+  group: ios-review-preflight-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-public-anon-key
+      VITE_PUSH_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - name: Record Apple build tools
+        run: xcodebuild -version && xcodebuild -showsdks
+      - run: npm ci
+      - run: npm run typecheck && npm run lint && npm run test
+      - run: npm run mobile:links:check
+      - run: npm run build:native && npm run mobile:version && npx cap sync ios
+      - name: Compile iOS release for the simulator without signing
+        run: >-
+          xcodebuild -project ios/App/App.xcodeproj -scheme App
+          -configuration Release -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath "$RUNNER_TEMP/AlberringDerivedData"
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Preserve the compile result (not a production or App Store build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: alberring-ios-compatibility-only
+          path: ${{ runner.temp }}/AlberringDerivedData/Build/Products/Release-iphonesimulator/App.app
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,18 @@
+flowchart TB
+  U[Beschäftigte] --> W[Web / PWA auf Vercel]
+  U --> I[iOS / Capacitor / lokal gebündelter Build]
+  U --> A[Android / Capacitor / lokal gebündelter Build]
+  W --> R[Gemeinsamer React-Code: Komponenten, Formulare, Router, Hooks, Types]
+  I --> R
+  A --> R
+  R --> P[Plattformadapter: Gerätefunktionen und sichere Sitzung]
+  R --> S[Supabase Client / HTTPS / JWT]
+  S --> AUTH[Supabase Auth]
+  S --> DB[PostgreSQL / RLS / RPC / Audit]
+  S --> ST[Private Storage-Buckets]
+  S --> RT[Realtime]
+  S --> EF[Bestehende Supabase Edge Functions]
+  EF --> APNS[APNs / iOS Push]
+  EF --> FCM[FCM / Android Push]
+  P --> KC[iOS Keychain]
+  P --> KS[Android Keystore / AES-GCM]

@@ -33,7 +33,12 @@ insert into public.employee_profiles(profile_id,organization_id,first_name,last_
 
 insert into public.roles(id,organization_id,name,system_key) values
   ('10000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000099','Mitarbeiter','employee'),
-  ('10000000-0000-4000-8000-000000000098','00000000-0000-4000-8000-000000000001','Technische Administration','technical_admin');
+  ('10000000-0000-4000-8000-000000000098','00000000-0000-4000-8000-000000000001','RLS begrenzte Verwaltung',null),
+  ('10000000-0000-4000-8000-000000000097','00000000-0000-4000-8000-000000000001','RLS Planungsrechte',null);
+-- Synthetic grant-only fixtures isolate permission boundaries. They are not
+-- production roles and cannot be assigned through the fixed role catalogue.
+insert into public.role_permissions(role_id,permission_key)
+select '10000000-0000-4000-8000-000000000097',key from public.permissions where key in ('dashboard.view','directory.view','schedule.manage','sick_leave.view_status');
 insert into public.role_permissions(role_id,permission_key)
 select '10000000-0000-4000-8000-000000000099',key from public.permissions where key in ('dashboard.view','directory.view','messages.use','news.view');
 insert into public.role_permissions(role_id,permission_key)
@@ -42,7 +47,7 @@ insert into public.user_roles(profile_id,role_id,organization_id) values
   ('30000000-0000-4000-8000-000000000011','10000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001'),
   ('30000000-0000-4000-8000-000000000012','10000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001'),
   ('30000000-0000-4000-8000-000000000013','10000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000099'),
-  ('30000000-0000-4000-8000-000000000014','10000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000001'),
+  ('30000000-0000-4000-8000-000000000014','10000000-0000-4000-8000-000000000097','00000000-0000-4000-8000-000000000001'),
   ('30000000-0000-4000-8000-000000000015','10000000-0000-4000-8000-000000000098','00000000-0000-4000-8000-000000000001'),
   ('30000000-0000-4000-8000-000000000016','10000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000001');
 
@@ -254,19 +259,14 @@ select throws_ok(
   null,
   'Auch Rollenmanager können Rollen nicht direkt anlegen'
 );
-select lives_ok(
+select throws_ok(
   $$ select public.create_role('RLS Benutzerdefiniert') $$,
-  'Rollenmanager kann eine benutzerdefinierte Rolle über die geprüfte RPC anlegen'
+  '42501','permission_denied',
+  'Begrenzte Rollenverwaltung kann den festen Rollenkatalog nicht erweitern'
 );
 select ok(
-  (
-    select organization_id='00000000-0000-4000-8000-000000000001'::uuid
-      and system_key is null
-      and active
-    from public.roles
-    where name='RLS Benutzerdefiniert'
-  ),
-  'Neue RPC-Rolle ist aktiv, mandantengebunden und niemals eine Systemrolle'
+  not exists(select 1 from public.roles where name='RLS Benutzerdefiniert'),
+  'Abgelehnte Rollenerstellung hinterlässt keine neue Rolle'
 );
 select throws_ok(
   $$ delete from public.documents where id='73000000-0000-4000-8000-000000000014' $$,

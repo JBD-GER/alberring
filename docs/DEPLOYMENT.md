@@ -1,10 +1,24 @@
 # Deployment
 
+## Produktivdomain und Resend vom 29.09.2026
+
+Die Web-App ist unter **https://app.alberring.de** live. Resend ist für die Domain verifiziert und als Supabase-SMTP-Dienst eingerichtet. Site URL, Einladungs-/Reset-Redirects, Function-`APP_URL` und CORS wurden auf die neue Domain abgestimmt und geprüft. Der Nutzer bestätigt die Funktion nach der Umstellung. Aktueller Nachweis: [12_LIVE_DOMAIN_UND_RESEND_2026-09-29.md](12_LIVE_DOMAIN_UND_RESEND_2026-09-29.md). Die folgenden Abschnitte dokumentieren frühere Veröffentlichungsstände.
+
+## Mailversand-Korrekturen vom 24.09.2026
+
+Die aktualisierte Oberfläche ist mit Deployment `dpl_3LQQb73z8ihU9jdzxTNH8VqT7dLv` produktiv unter https://alberringapp.vercel.app. Die Einladungs-Functions, 24 Stunden Auth-Link-Laufzeit, STRATO-SMTP und gestaltete Supabase-Mailvorlagen sind ebenfalls eingerichtet. Der tatsächliche Einladungstest wird jedoch noch vom ausgehenden STRATO-URL-Filter blockiert; eine erfolgreiche Veröffentlichung ist daher noch kein Nachweis funktionierender Zustellung. Befunde und verbleibende Schritte: [MAILVERSAND_2026-09-24.md](MAILVERSAND_2026-09-24.md).
+
+## Telefonat-Ergänzung vom 16.09.2026 veröffentlicht
+
+Der Auftraggeber hat die frühere Veröffentlichungssperre mit „okay launch es jetzt“ aufgehoben. Die neue Version ist unter https://alberringapp.vercel.app aktiv; Deployment `dpl_Dfj4GBtsZ6j8cKsgNR5QoCwowdUW` ist READY. Fünf Migrationen (einschließlich zusätzlichem Abgleich dreier technischer SQL-Aufrufrechte), fünf Edge Functions und der geprüfte Produktionsbuild wurden bereitgestellt.
+
+Vollständiger Nachweis: [VEROEFFENTLICHUNG_2026-09-16.md](VEROEFFENTLICHUNG_2026-09-16.md). Die PDF Version 2.0 und ihr Quellmanifest bleiben als historischer lokaler Abnahmestand unverändert erhalten; der Veröffentlichungsnachweis ergänzt den späteren produktiven Stand.
+
 Diese Anleitung trennt bewusst Datenbank, Auth, Edge Functions und Frontend. Ein SQL-Bundle kann nur die Datenbankseite installieren; Function-Code, Secrets, E-Mail-Versand und Zeitpläne sind getrennte Supabase-Dienste und müssen separat eingerichtet werden.
 
 ## 1. Supabase-Projekt und SQL
 
-Vor Änderungen an einem bereits genutzten Projekt ein Backup erstellen. Danach im Supabase **SQL Editor** genau eines der folgenden Bundles vollständig und ohne einzelne Abschnitte ausführen:
+Vor Änderungen an einem bereits genutzten Projekt ein Backup erstellen. Bei laufenden, bereits migrierten Installationen nur noch ausstehende Einzelmigrationen anwenden; zuvor die Migrationshistorie und den tatsächlichen Schema-Stand abgleichen. Für die Ersteinrichtung beziehungsweise ein Projekt mit ausschließlich den ersten beiden Migrationen im Supabase **SQL Editor** genau eines der folgenden Bundles vollständig ausführen:
 
 - Bestehende Alberring-Installation, in der `202607100001_core.sql` und `202607100002_messaging.sql` bereits ausgeführt wurden: `supabase/SETUP_UPGRADE_20260710.sql`
 - Leeres, neues Projekt: `supabase/SETUP_FRESH.sql`
@@ -20,6 +34,7 @@ Der einfachste Weg führt im Supabase Dashboard über **Authentication**:
 - Mindestlänge für Passwörter auf 12 Zeichen setzen und Groß-/Kleinbuchstaben sowie Ziffern verlangen;
 - die produktive **Site URL** auf die exakte Frontend-URL setzen, zum Beispiel `https://connect.example.de`;
 - als erlaubte Redirect-URLs exakt `https://connect.example.de/accept-invite` und `https://connect.example.de/reset-password` eintragen;
+- vor Veröffentlichung des 24-Stunden-Hinweises unter **Sign In / Providers → Email → Email OTP expiration** `86400` Sekunden einstellen. Supabase verwendet diese Dauer gemeinsam für Einladungs- und Recovery-Links; eine Änderung der lokalen Datei allein ändert die Produktion nicht;
 - für den Produktivbetrieb einen eigenen SMTP-Dienst konfigurieren und Invite- sowie Recovery-Mail real testen.
 
 Die lokale [`supabase/config.toml`](../supabase/config.toml) enthält dieselben Regeln für die lokale Supabase-Umgebung. Wer die Produktionskonfiguration per CLI verwaltet, ersetzt dort vorher die lokalen URLs kontrolliert durch die Produktions-URLs und verwendet anschließend `npx supabase config push --project-ref IHRE_PROJECT_REF`. Nicht versehentlich eine lokale Site URL in Produktion pushen.
@@ -61,6 +76,10 @@ Alternativ können sie einzeln deployt werden:
 npx supabase functions deploy admin-create-user
 npx supabase functions deploy admin-update-user-status
 npx supabase functions deploy admin-resend-invite
+npx supabase functions deploy admin-delete-invited-user
+npx supabase functions deploy admin-delete-user
+npx supabase functions deploy admin-update-employee
+npx supabase functions deploy admin-update-employee-email
 npx supabase functions deploy create-secure-download
 npx supabase functions deploy careville-test-connection
 npx supabase functions deploy send-notification-batch --no-verify-jwt
@@ -69,9 +88,9 @@ npx supabase functions deploy process-mileage-reminders --no-verify-jwt
 npx supabase functions deploy process-scheduled-news --no-verify-jwt
 ```
 
-Die fünf benutzeraufgerufenen Functions validieren das Supabase-JWT und die benötigte Permission selbst. Die vier Automations-Functions prüfen stattdessen bei jedem Aufruf den Header `x-automation-secret`; deshalb wird nur für diese Endpunkte `--no-verify-jwt` verwendet.
+Die neun benutzeraufgerufenen Functions validieren das Supabase-JWT und die benötigte Permission selbst. Die vier Automations-Functions prüfen stattdessen bei jedem Aufruf den Header `x-automation-secret`; deshalb wird nur für diese Endpunkte `--no-verify-jwt` verwendet. Vor dem Deployment von `admin-delete-invited-user` muss die zugehörige Datenbankmigration vom 16.09.2026 angewendet sein.
 
-Schlägt ausschließlich die Mailzustellung wegen fehlendem Provider oder Versandlimit fehl, erzeugen `admin-create-user` und `admin-resend-invite` serverseitig einen kurzlebigen Einmal-Link. Die App zeigt ihn nur der berechtigten Administration zum Kopieren an. Damit bleibt die Mitarbeiteranlage funktionsfähig; der Link muss über einen sicheren, zum Empfänger verifizierten Kanal übermittelt werden. Bei funktionierendem SMTP wird weiterhin automatisch versendet und kein Link an den Browser zurückgegeben.
+Ist der Maildienst deaktiviert oder für die Mitarbeiteradresse nicht freigeschaltet, können `admin-create-user` und `admin-resend-invite` serverseitig einen Einmal-Link bereitstellen. Die App unterscheidet diesen manuellen Link ausdrücklich von einer versendeten E-Mail. Er darf nur über einen sicheren, zum Empfänger verifizierten Kanal übermittelt werden. Bei einem vorübergehenden Versandlimit wird kein Ersatzlink erzeugt, damit ein zuvor tatsächlich versendeter Link erhalten bleibt. Scheitert der Versand nach der Mitarbeiteranlage, bleibt das Konto als offene Einladung sichtbar und die App bietet den erneuten Versand an. Bei funktionierendem SMTP wird automatisch versendet und kein Link an den Browser zurückgegeben.
 
 ## 6. Zeitpläne konfigurieren
 

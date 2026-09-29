@@ -1,0 +1,42 @@
+Android native verification – 2026-09-17T08:45:57.434562+00:00
+
+Command: ./android/gradlew --project-dir android --no-daemon assembleDebug bundleRelease lintDebug :app:assembleDebugAndroidTest
+Toolchain: Temurin JDK 21.0.12.1; Android SDK 36; Build Tools 36.0.0; Gradle 8.14.3; AGP 8.13.0
+
+> Task :app:bundleReleaseResources UP-TO-DATE
+> Task :app:assembleDebugAndroidTest UP-TO-DATE
+> Task :app:lintDebug
+> Task :app:bundleRelease
+BUILD SUCCESSFUL in 11s
+986 actionable tasks: 93 executed, 893 up-to-date
+
+Actual Android 36 ARM64 emulator instrumentation output (latest rebuilt and installed APK):
+
+de.alberring.connect.SecureStorageInstrumentedTest:..
+
+Time: 3.084
+
+OK (2 tests)
+
+Tests cover ciphertext-only storage, fresh random nonce, round-trip/deletion, invalid key rejection, and authenticated decryption rejection after flipping one byte of valid AES-GCM ciphertext.
+
+Artifact SHA-256 (local, generated, ignored by Git):
+905dceb94abd6ffd4a0a2ad555ed75c9ca7c05b9c1a61c5122b77341b81d2916  android/app/build/outputs/apk/debug/app-debug.apk  (10323893 bytes)
+Packaged index.html matches current dist-native/index.html: 3ea5e3b2d039fb1362594e21485c9b385ebe3111ac4d611c5aaa0a432fcaf7cd
+All 77 dist-native files match the packaged files byte-for-byte.
+06000f2de76db1baba6bb96f112d5dadf590de53fa5379434dc82fb7daf6d275  android/app/build/outputs/bundle/release/app-release.aab  (7302339 bytes)
+Packaged index.html matches current dist-native/index.html: 3ea5e3b2d039fb1362594e21485c9b385ebe3111ac4d611c5aaa0a432fcaf7cd
+All 77 dist-native files match the packaged files byte-for-byte.
+
+Android app Lint: 0 errors; 6 warnings.
+Warning AndroidGradlePluginVersion: A newer version of Gradle than 8.14.3 is available: 8.14.5
+Warning ObsoleteSdkInt: This folder configuration (`v24`) is unnecessary; `minSdkVersion` is 24. Merge all the resources in this folder into `drawable`.
+Warning UnusedResources: The resource `R.layout.activity_main` appears to be unused
+Warning UnusedResources: The resource `R.xml.config` appears to be unused
+Warning UnusedResources: The resource `R.string.package_name` appears to be unused
+Warning UnusedResources: The resource `R.string.custom_url_scheme` appears to be unused
+
+AAB is UNSIGNED: no production signing credentials used; not uploadable to Google Play.
+Latest debug APK installed and started successfully on Android 36 ARM64 emulator. Login screenshot refreshed from that APK: docs/screenshots/12-android-login.png.
+iOS: Swift syntax parser, plist and pbxproj parse successful; full iOS SDK compilation NOT performed (Xcode absent).
+iOS Geolocation SDK-required AlwaysAndWhenInUse description is present; no Always request or background-location mode enabled.

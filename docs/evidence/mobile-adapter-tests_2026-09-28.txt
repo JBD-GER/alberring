@@ -1,0 +1,17 @@
+Alberring Connect - gezielte Plattformadapterprüfung
+Datum: 28.09.2026 (Europe/Berlin)
+Befehl: npm run test:mobile
+Ausführung im aktuellen lokalen Arbeitsbaum; Basis-Commit 8a75225.
+
+> alberring-connect@0.1.0 test:mobile
+> vitest run src/services/platform
+
+RUN v4.1.11 /Users/chrisotphpfad/Projekte/Alberring
+Test Files  6 passed (6)
+Tests       59 passed (59)
+Start at    07:37:49
+Duration    772ms
+
+Exit-Code: 0
+Dies ist ein aus dem tatsächlichen Toolergebnis übernommener Kurzbeleg.
+Kein Android-/iOS-Neubuild, kein Hardwaretest und keine Produktionsprüfung.

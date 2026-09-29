@@ -1,3 +1,4 @@
+import { publicDownloadUrl } from "../_shared/download-url.ts";
 import { z } from "npm:zod@4.4.3";
 import { corsHeaders, json } from "../_shared/http.ts";
 import {
@@ -76,7 +77,13 @@ Deno.serve(async (req) => {
     if (error || !data?.signedUrl)
       throw new HttpError(404, "file_not_found", "Datei wurde nicht gefunden.");
     return json(
-      { signedUrl: data.signedUrl, expiresIn },
+      {
+        signedUrl: publicDownloadUrl(
+          data.signedUrl,
+          Deno.env.get("APP_SUPABASE_PUBLIC_URL"),
+        ),
+        expiresIn,
+      },
       200,
       requestId,
       corsHeaders(origin),

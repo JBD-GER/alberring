@@ -9,6 +9,7 @@ import {
   LockKeyhole,
   FolderOpen,
   Plus,
+  Pencil,
   Search,
   UploadCloud,
 } from "lucide-react";
@@ -23,6 +24,8 @@ type DocumentRow = {
   visibility: "organization" | "team" | "personal";
   created_at: string;
   owner_profile_id: string | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
   document_folders: { id: string; name: string } | null;
   document_versions: Array<{
     id: string;
@@ -37,6 +40,7 @@ type FolderRow = {
   id: string;
   name: string;
   scope: "organization" | "personal" | "role";
+  owner_profile_id: string | null;
 };
 type SickDocumentRow = {
   id: string;
@@ -60,6 +64,7 @@ export function Documents() {
   const [search, setSearch] = useState("");
   const [upload, setUpload] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<FolderRow | null>(null);
   const [activeFolder, setActiveFolder] = useState<string | "sick" | null>(
     null,
   );
@@ -69,7 +74,7 @@ export function Documents() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("document_folders")
-        .select("id,name,scope")
+        .select("id,name,scope,owner_profile_id")
         .is("archived_at", null)
         .order("name");
       if (error) throw error;
@@ -133,6 +138,7 @@ export function Documents() {
         (activeFolder !== "sick" && d.document_folders?.id === activeFolder)) &&
       d.title.toLocaleLowerCase("de").includes(search.toLocaleLowerCase("de")),
   );
+  const selectedFolder = folders.find((folder) => folder.id === activeFolder);
   return (
     <div className="page-stack">
       <section className="page-intro">
@@ -192,6 +198,26 @@ export function Documents() {
           <span>Privat oder als Admin vorgeben</span>
         </button>
       </div>
+      {selectedFolder &&
+        has("data.correct") &&
+        (selectedFolder.scope !== "personal" ||
+          selectedFolder.owner_profile_id === appSession?.profile.id) && (
+          <div className="form-actions">
+            <button
+              className="secondary"
+              onClick={() => setRenamingFolder(selectedFolder)}
+            >
+              <Pencil /> Ordner umbenennen
+            </button>
+          </div>
+        )}
+      {renamingFolder && has("data.correct") && (
+        <FolderRenameForm
+          key={renamingFolder.id}
+          folder={renamingFolder}
+          onClose={() => setRenamingFolder(null)}
+        />
+      )}
       {folderOpen && (
         <FolderForm
           onDone={() => {
@@ -351,6 +377,82 @@ export function Documents() {
         </div>
       )}
     </div>
+  );
+}
+
+function FolderRenameForm({
+  folder,
+  onClose,
+}: {
+  folder: FolderRow;
+  onClose: () => void;
+}) {
+  const client = useQueryClient();
+  const [name, setName] = useState(folder.name);
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("rename_document_folder", {
+        p_folder_id: folder.id,
+        p_name: name.trim(),
+        p_correction_reason: reason.trim(),
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["document-folders"] }),
+        client.invalidateQueries({ queryKey: ["documents"] }),
+      ]);
+      onClose();
+    },
+  });
+  return (
+    <section className="editor-card">
+      <h3>Ordner umbenennen</h3>
+      <p>Dokumente, Freigaben und Ordnerzuordnung bleiben erhalten.</p>
+      <form
+        className="form two-column"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
+      >
+        <label>
+          Ordnername
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={120}
+            required
+          />
+        </label>
+        <label>
+          Korrekturgrund
+          <input
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            minLength={3}
+            maxLength={500}
+            required
+          />
+        </label>
+        {save.error && (
+          <div className="alert error full" role="alert">
+            Der Ordner konnte nicht umbenannt werden. Prüfen Sie Name und
+            Korrekturgrund und versuchen Sie es erneut.
+          </div>
+        )}
+        <div className="form-actions full">
+          <button type="button" className="secondary" onClick={onClose}>
+            Abbrechen
+          </button>
+          <button className="primary" disabled={save.isPending}>
+            {save.isPending ? "Wird gespeichert …" : "Ordnername speichern"}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -704,6 +806,7 @@ export function DocumentDetail() {
   const { appSession, has } = useAuth();
   const client = useQueryClient();
   const [versionFile, setVersionFile] = useState<File | null>(null);
+  const [correcting, setCorrecting] = useState(false);
   const [changeNote, setChangeNote] = useState("");
   const [showAcknowledgements, setShowAcknowledgements] = useState(false);
   const { data, isLoading, error } = useQuery({
@@ -712,7 +815,7 @@ export function DocumentDetail() {
       const { data, error } = await supabase
         .from("documents")
         .select(
-          "id,title,visibility,created_at,owner_profile_id,acknowledgement_required,document_folders(id,name),document_versions(id,version,storage_path,mime_type,size_bytes,created_at),document_acknowledgements(acknowledged_at,profile_id,profiles(display_name))",
+          "id,title,visibility,created_at,owner_profile_id,acknowledgement_required,valid_from,valid_until,document_folders(id,name),document_versions(id,version,storage_path,mime_type,size_bytes,created_at),document_acknowledgements(acknowledged_at,profile_id,profiles(display_name))",
         )
         .eq("id", id!)
         .single();
@@ -860,6 +963,23 @@ export function DocumentDetail() {
             {versions.length} {versions.length === 1 ? "Version" : "Versionen"}
           </p>
         </header>
+        {has("data.correct") ? (
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setCorrecting((value) => !value)}
+          >
+            <Pencil />{" "}
+            {correcting ? "Korrektur schließen" : "Dokumentdaten korrigieren"}
+          </button>
+        ) : null}
+        {correcting && has("data.correct") ? (
+          <DocumentCorrectionForm
+            key={data.id}
+            document={data}
+            onDone={() => setCorrecting(false)}
+          />
+        ) : null}
         <div className="version-list">
           {versions.map((version) => (
             <article key={version.id}>
@@ -995,5 +1115,125 @@ export function DocumentDetail() {
         )}
       </section>
     </div>
+  );
+}
+
+function DocumentCorrectionForm({
+  document,
+  onDone,
+}: {
+  document: DocumentDetailRow;
+  onDone: () => void;
+}) {
+  const client = useQueryClient();
+  const [title, setTitle] = useState(document.title);
+  const [acknowledgementRequired, setAcknowledgementRequired] = useState(
+    document.acknowledgement_required,
+  );
+  const [validFrom, setValidFrom] = useState(
+    document.valid_from
+      ? format(new Date(document.valid_from), "yyyy-MM-dd'T'HH:mm")
+      : "",
+  );
+  const [validUntil, setValidUntil] = useState(
+    document.valid_until
+      ? format(new Date(document.valid_until), "yyyy-MM-dd'T'HH:mm")
+      : "",
+  );
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("correct_document_metadata", {
+        p_document_id: document.id,
+        p_title: title.trim(),
+        p_acknowledgement_required: acknowledgementRequired,
+        p_valid_from: validFrom ? new Date(validFrom).toISOString() : null,
+        p_valid_until: validUntil ? new Date(validUntil).toISOString() : null,
+        p_correction_reason: reason.trim(),
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["document", document.id] }),
+        client.invalidateQueries({ queryKey: ["documents"] }),
+      ]);
+      onDone();
+    },
+  });
+  return (
+    <form
+      className="document-version-upload"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <strong>Dokumentdaten korrigieren</strong>
+      <p>
+        Freigaben, Ordner, Dateiversionen und vorhandene Lesebestätigungen
+        bleiben erhalten. Änderungen werden protokolliert.
+      </p>
+      <label>
+        Titel
+        <input
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          minLength={2}
+          maxLength={180}
+          required
+        />
+      </label>
+      <label>
+        Gültig ab
+        <input
+          type="datetime-local"
+          value={validFrom}
+          onChange={(event) => setValidFrom(event.target.value)}
+        />
+      </label>
+      <label>
+        Gültig bis
+        <input
+          type="datetime-local"
+          value={validUntil}
+          min={validFrom || undefined}
+          onChange={(event) => setValidUntil(event.target.value)}
+        />
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={acknowledgementRequired}
+          onChange={(event) => setAcknowledgementRequired(event.target.checked)}
+        />{" "}
+        Lesebestätigung erforderlich
+      </label>
+      <label>
+        Korrekturgrund
+        <input
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          minLength={3}
+          maxLength={500}
+          required
+        />
+      </label>
+      {save.error ? (
+        <p className="alert error" role="alert">
+          Die Korrektur konnte nicht gespeichert werden. Bitte prüfen Sie Titel
+          und Gültigkeitszeitraum.
+        </p>
+      ) : null}
+      <div className="form-actions">
+        <button
+          type="submit"
+          className="primary"
+          disabled={save.isPending || reason.trim().length < 3}
+        >
+          {save.isPending ? "Wird gespeichert …" : "Korrektur speichern"}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -30,13 +30,13 @@ const actions = [
     to: "/app/sick-leave",
     label: "Krankmeldung",
     icon: CalendarDays,
-    permission: "sick_leave.create_own",
+    permission: "sick_leave.create",
   },
   {
     to: "/app/leave",
-    label: "Urlaub beantragen",
+    label: "Urlaubsantrag erfassen",
     icon: Umbrella,
-    permission: "leave.create_own",
+    permission: "leave.create",
   },
   {
     to: "/app/fleet",

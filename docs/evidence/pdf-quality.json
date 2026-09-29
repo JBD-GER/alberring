@@ -1,0 +1,19 @@
+{
+  "date": "2026-09-17",
+  "artifact": "docs/Foerderungsdokumentation_Mobile_App.pdf",
+  "sha256": "df14b8c8f50d41d1106388561a8da5bb27d67c8abe2e36317844f16f3a1873a9",
+  "bytes": 3641583,
+  "pages": 58,
+  "page_format": "A4, alle Seiten",
+  "toc_entries": 30,
+  "chapters": 29,
+  "figures_numbered_consecutively": 19,
+  "chapter_destinations_verified": true,
+  "text_boundary_violations": [],
+  "replacement_glyphs": false,
+  "private_key_patterns_found": false,
+  "render_engine": "PyMuPDF 1.26.5",
+  "rendered_pages": 58,
+  "visual_review": "Alle 58 gerenderten Seiten auf Kontaktbögen geprüft; Detailkontrolle von Deckblatt, Inhaltsverzeichnis, Architekturdiagramm, langen Tabellen und Screenshots. Keine sichtbare Überlappung, abgeschnittene Inhalte oder verzerrte Bilder festgestellt.",
+  "result": "bestanden"
+}

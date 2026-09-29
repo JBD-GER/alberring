@@ -23,6 +23,8 @@ target.resources_build_phase.add_file_reference(group.new_file('review-access.js
 target.build_configurations.each do |config|
   config.build_settings.merge!({
     'SWIFT_VERSION' => '5.0',
+    'PRODUCT_NAME' => '$(TARGET_NAME)',
+    'ONLY_ACTIVE_ARCH' => 'YES',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'de.alberring.connect.StoreScreenshots',
     'GENERATE_INFOPLIST_FILE' => 'YES',
     'TEST_TARGET_NAME' => 'App',

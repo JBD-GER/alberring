@@ -1,5 +1,6 @@
 """Restore CI signing files without printing credential values. No network calls."""
 import base64
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import plistlib
@@ -55,11 +56,18 @@ def main():
             raise RuntimeError("The provisioning profile does not match the configured team/name.")
         if contents.get("Entitlements", {}).get("application-identifier") != f"{team}.de.alberring.connect":
             raise RuntimeError("The provisioning profile does not match de.alberring.connect.")
-        profiles = Path.home() / "Library/MobileDevice/Provisioning Profiles"
-        profiles.mkdir(parents=True, exist_ok=True)
-        destination = profiles / "alberring-ci.mobileprovision"
-        destination.write_bytes(profile.read_bytes())
-        destination.chmod(0o600)
+        expiration = contents.get("ExpirationDate")
+        if not expiration or expiration.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+            raise RuntimeError("The provisioning profile has expired.")
+        if contents.get("ProvisionedDevices") or contents.get("ProvisionsAllDevices") or contents.get("Entitlements", {}).get("get-task-allow"):
+            raise RuntimeError("An App Store distribution profile is required.")
+        # Xcode 16+ uses UserData; also support the legacy profile location.
+        for relative in ["Library/Developer/Xcode/UserData/Provisioning Profiles", "Library/MobileDevice/Provisioning Profiles"]:
+            profiles = Path.home() / relative
+            profiles.mkdir(parents=True, exist_ok=True)
+            destination = profiles / "alberring-ci.mobileprovision"
+            destination.write_bytes(profile.read_bytes())
+            destination.chmod(0o600)
         run("security", "create-keychain", "-p", password, str(keychain))
         run("security", "set-keychain-settings", "-lut", "21600", str(keychain))
         run("security", "unlock-keychain", "-p", password, str(keychain))

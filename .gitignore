@@ -26,3 +26,6 @@ google-services.json
 GoogleService-Info.plist
 ios/App/CapApp-SPM/.build/
 mobile-artifacts/
+
+# Local Apple signing credentials; never commit or upload as artifacts.
+/apple-signing-private/

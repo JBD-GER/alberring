@@ -20,7 +20,7 @@ jobs:
       - run: npm run test
       - run: deno check supabase/functions/*/index.ts
       - run: deno test --allow-env=ALLOWED_ORIGINS,AUTOMATION_SECRET --permit-no-files supabase/functions
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
   database:
     runs-on: ubuntu-latest

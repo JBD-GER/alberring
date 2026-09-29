@@ -132,13 +132,6 @@ dialog,
 }
 
 @media (max-width: 620px) {
-  /* Prevent iOS Safari from zooming into form controls. */
-  input,
-  select,
-  textarea {
-    font-size: 16px;
-  }
-
   .page-stack {
     gap: 18px;
   }

@@ -229,6 +229,13 @@ export function Settings() {
       <NotificationPreferences />
       <DevicePermissions />
       <PushSettings />
+      <section className="settings-card">
+        <h3>Datenschutz</h3>
+        <p>Informationen zur Verarbeitung Ihrer Daten und zu Ihren Rechten.</p>
+        <Link className="text-link" to="/datenschutz">
+          Datenschutzerklärung öffnen
+        </Link>
+      </section>
       <section className="settings-card danger-zone">
         <div className="settings-title">
           <User />

@@ -29,3 +29,6 @@ mobile-artifacts/
 
 # Local Apple signing credentials; never commit or upload as artifacts.
 /apple-signing-private/
+
+# Python helper caches.
+__pycache__/

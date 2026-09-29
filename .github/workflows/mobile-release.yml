@@ -6,6 +6,9 @@ on:
     paths:
       - ".github/workflows/mobile-release.yml"
       - "scripts/prepare-release-secrets.py"
+      - "scripts/upload-ios.py"
+      - "scripts/configure-ios-signing.mjs"
+      - "package-lock.json"
   workflow_dispatch:
     inputs:
       platform:
@@ -25,7 +28,8 @@ concurrency:
   cancel-in-progress: false
 # Configure the protected store-release environment and enable this repository
 # variable only after the account/checklist requirements have been completed.
-# This workflow creates signed artifacts; submission is a separate reviewed step.
+# Creates signed artifacts and optionally uploads iOS to App Store Connect.
+# App Review submission and manual publication remain separate steps.
 env:
   BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
 jobs:
@@ -121,10 +125,9 @@ jobs:
         run: python3 scripts/prepare-release-secrets.py ios
       - name: Archive and export App Store package
         run: |
+          node scripts/configure-ios-signing.mjs
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Alberring.xcarchive" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME" archive
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Alberring.xcarchive" archive
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Alberring.xcarchive" \
             -exportPath mobile-artifacts/ios -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
       - uses: actions/upload-artifact@v4
@@ -133,6 +136,13 @@ jobs:
           path: mobile-artifacts/ios/*.ipa
           if-no-files-found: error
           retention-days: 14
+      - name: Validate and upload iOS build to App Store Connect
+        if: vars.IOS_UPLOAD_ENABLED == 'true'
+        env:
+          APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 scripts/upload-ios.py
       - if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/alberring-signing.keychain-db" || true

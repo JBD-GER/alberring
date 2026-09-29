@@ -32,3 +32,7 @@ mobile-artifacts/
 
 # Python helper caches.
 __pycache__/
+
+# Generated screenshot runner: contains ephemeral review credentials.
+/ios/App/StoreScreenshots/
+/store-screenshots/

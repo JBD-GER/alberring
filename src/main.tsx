@@ -39,6 +39,7 @@ import "./styles/premium-features.css";
 import "./styles/onboarding.css";
 import "./styles/product-tour.css";
 import "./styles/platform.css";
+import "./styles/input-safety.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, retry: 1 },

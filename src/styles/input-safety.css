@@ -1,0 +1,31 @@
+/* iOS focuses small form text by zooming the entire viewport. Keep every
+   editable control at least 16 CSS px, including dialogs and lazy-loaded
+   forms whose more specific `font: inherit` rules used to defeat this guard.
+   !important is intentional: this is a mobile interaction invariant.
+   Use rem as well so larger user text settings remain effective. */
+@media (max-width: 960px), (any-pointer: coarse) {
+  :root
+    :is(
+      input,
+      select,
+      textarea,
+      [contenteditable=""],
+      [contenteditable="true"],
+      [contenteditable="plaintext-only"]
+    ) {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
+/* Native tablets also need the guard when using a mouse or trackpad. */
+.native-app
+  :is(
+    input,
+    select,
+    textarea,
+    [contenteditable=""],
+    [contenteditable="true"],
+    [contenteditable="plaintext-only"]
+  ) {
+  font-size: max(16px, 1rem) !important;
+}

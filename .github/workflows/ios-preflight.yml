@@ -108,7 +108,9 @@ jobs:
             -destination "platform=iOS Simulator,id=$SCREENSHOT_SIMULATOR" \
             -derivedDataPath "$RUNNER_TEMP/ScreenshotDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/Screenshots.xcresult" \
-            -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test
+            -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM=4562LXMH4C test
       - name: Collect pre-login failure evidence only
         if: failure()
         run: |

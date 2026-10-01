@@ -15,6 +15,19 @@ credentials_path = ENV.fetch('SCREENSHOT_CREDENTIALS_FILE')
 FileUtils.cp(credentials_path, File.join(directory, 'review-access.json'))
 File.chmod(0600, File.join(directory, 'review-access.json'))
 
+# The app deliberately fails closed if Keychain is unavailable. An unsigned
+# simulator app has no application identifier and cannot use its private vault.
+# Ad-hoc sign this disposable simulator build with the same app-scoped identity.
+entitlements = {
+  'application-identifier' => '4562LXMH4C.de.alberring.connect',
+  'keychain-access-groups' => ['4562LXMH4C.de.alberring.connect'],
+  'com.apple.developer.team-identifier' => '4562LXMH4C'
+}
+Xcodeproj::Plist.write_to_path(entitlements, File.join(directory, 'Simulator.entitlements'))
+app.build_configurations.each do |config|
+  config.build_settings['CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]'] = 'StoreScreenshots/Simulator.entitlements'
+end
+
 target = project.new_target(:ui_test_bundle, 'StoreScreenshots', :ios, '15.0')
 target.add_dependency(app)
 group = project.main_group.new_group('StoreScreenshots', 'StoreScreenshots')
@@ -29,7 +42,7 @@ target.build_configurations.each do |config|
     'GENERATE_INFOPLIST_FILE' => 'YES',
     'TEST_TARGET_NAME' => 'App',
     'TARGETED_DEVICE_FAMILY' => '1,2',
-    'CODE_SIGNING_ALLOWED' => 'NO'
+    'CODE_SIGNING_ALLOWED' => 'YES'
   })
 end
 project.root_object.attributes['TargetAttributes'][target.uuid] = { 'TestTargetID' => app.uuid }

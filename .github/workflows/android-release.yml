@@ -3,7 +3,10 @@ name: Signed Android release
 on:
   push:
     branches: ["codex/android-release-preparation"]
-    paths: [".github/workflows/android-release.yml"]
+    paths:
+      - ".github/workflows/android-release.yml"
+      - "package-lock.json"
+      - "mobile-version.json"
   workflow_dispatch:
 
 permissions:
@@ -62,7 +65,8 @@ jobs:
           jarsigner -verify -verbose -certs "$bundle" > mobile-artifacts/android/signature-verification.txt
           grep -q 'jar verified.' mobile-artifacts/android/signature-verification.txt
           keytool -printcert -jarfile "$bundle" > mobile-artifacts/android/upload-certificate.txt
-          cp "$bundle" mobile-artifacts/android/Alberring-1.0.1-6.aab
+          version=$(node -p 'require("./mobile-version.json").version')
+          cp "$bundle" "mobile-artifacts/android/Alberring-${version}-${BUILD_NUMBER}.aab"
           sha256sum "$bundle" > mobile-artifacts/android/sha256.txt
           git rev-parse HEAD > mobile-artifacts/android/source-commit.txt
           cp mobile-version.json mobile-artifacts/android/mobile-version.json

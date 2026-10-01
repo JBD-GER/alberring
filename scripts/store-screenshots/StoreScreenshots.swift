@@ -54,10 +54,10 @@ final class StoreScreenshots: XCTestCase {
         XCTAssertTrue(loadedDashboard.waitForExistence(timeout: 25), "Dashboard data must load")
         try capture("01-dashboard")
 
-        let chat = app.links["Chat"].firstMatch
+        let chat = app.links.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Chat", "Chat ")).firstMatch
         XCTAssertTrue(chat.exists)
         chat.tap()
-        let sampleChat = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Prüfteam – Beispielchat")).firstMatch
+        let sampleChat = app.links.matching(NSPredicate(format: "label CONTAINS %@", "Prüfteam – Beispielchat")).firstMatch
         XCTAssertTrue(sampleChat.waitForExistence(timeout: 25), "Synthetic example chat must exist")
         sampleChat.tap()
         // Wait for chat rendering to settle before capture, without changing data.

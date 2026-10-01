@@ -1,0 +1,76 @@
+name: Signed Android release
+
+on:
+  push:
+    branches: ["codex/android-release-preparation"]
+    paths: [".github/workflows/android-release.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: android-release
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_PUSH_ENABLED: ${{ vars.VITE_PUSH_ENABLED }}
+      VITE_PUSH_ENVIRONMENT: production
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+        with: { packages: platform-tools }
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Use the committed mobile version
+        run: node -e 'const fs = require("fs"); const v = JSON.parse(fs.readFileSync("mobile-version.json")); fs.appendFileSync(process.env.GITHUB_ENV, `BUILD_NUMBER=${v.buildNumber}\n`);'
+      - run: npm ci
+      - run: node scripts/validate-release.mjs
+      - run: npm audit --audit-level=moderate
+      - run: npm run typecheck && npm run lint && npm run test
+      - run: npm run build:native && npm run mobile:version && npx cap sync android
+      - run: npm run security:check
+      - name: Restore the Android upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: python3 scripts/prepare-release-secrets.py android
+      - name: Verify the upload key can be read by Java
+        run: keytool -list -keystore "$ANDROID_KEYSTORE_PATH" -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS"
+      - name: Build the signed bundle and run Android lint
+        working-directory: android
+        run: ./gradlew --no-daemon bundleRelease lintRelease
+      - name: Verify bundle signature and retain provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-artifacts/android
+          bundle=android/app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify -verbose -certs "$bundle" > mobile-artifacts/android/signature-verification.txt
+          grep -q 'jar verified.' mobile-artifacts/android/signature-verification.txt
+          keytool -printcert -jarfile "$bundle" > mobile-artifacts/android/upload-certificate.txt
+          cp "$bundle" mobile-artifacts/android/Alberring-1.0.1-6.aab
+          sha256sum "$bundle" > mobile-artifacts/android/sha256.txt
+          git rev-parse HEAD > mobile-artifacts/android/source-commit.txt
+          cp mobile-version.json mobile-artifacts/android/mobile-version.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alberring-signed-android
+          path: mobile-artifacts/android/
+          if-no-files-found: error
+          retention-days: 30
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/alberring-upload.jks"

@@ -25,7 +25,16 @@ final class StoreScreenshots: XCTestCase {
         app.launchArguments = ["-AppleLanguages", "(de)", "-AppleLocale", "de_DE"]
         app.launch()
         let emailField = app.textFields.firstMatch
-        XCTAssertTrue(emailField.waitForExistence(timeout: 40), "Login form must load")
+        guard emailField.waitForExistence(timeout: 60) else {
+            // Before entering credentials, retain safe evidence of the launch failure.
+            print("PRE_LOGIN_UI: \(app.debugDescription)")
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("LaunchDiagnostics", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try XCUIScreen.main.screenshot().pngRepresentation.write(to: directory.appendingPathComponent("pre-login.png"))
+            XCTFail("Login form must load")
+            return
+        }
         emailField.tap()
         emailField.typeText(email)
         let passwordField = app.secureTextFields.firstMatch

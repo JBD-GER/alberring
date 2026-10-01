@@ -108,7 +108,22 @@ jobs:
             -destination "platform=iOS Simulator,id=$SCREENSHOT_SIMULATOR" \
             -derivedDataPath "$RUNNER_TEMP/ScreenshotDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/Screenshots.xcresult" \
-            -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+            -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test
+      - name: Collect pre-login failure evidence only
+        if: failure()
+        run: |
+          data_path="$(xcrun simctl get_app_container "$SCREENSHOT_SIMULATOR" de.alberring.connect.StoreScreenshots.xctrunner data)"
+          if [ -f "$data_path/Documents/LaunchDiagnostics/pre-login.png" ]; then
+            mkdir -p launch-diagnostics
+            cp "$data_path/Documents/LaunchDiagnostics/pre-login.png" launch-diagnostics/
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: alberring-launch-diagnostics-${{ matrix.device }}
+          path: launch-diagnostics/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Collect only screenshots and provenance
         run: |
           data_path="$(xcrun simctl get_app_container "$SCREENSHOT_SIMULATOR" de.alberring.connect.StoreScreenshots.xctrunner data)"

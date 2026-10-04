@@ -1,0 +1,33 @@
+.safety-dialog {
+  width: min(560px, calc(100% - 32px));
+  max-height: 85dvh;
+  overflow: auto;
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  color: var(--text);
+  background: var(--surface, white);
+  box-shadow: 0 20px 70px #0004;
+}
+.safety-dialog::backdrop {
+  background: #12203588;
+}
+.message-actions .safety-dialog button {
+  font-size: 16px;
+  padding: 12px;
+}
+.safety-dialog textarea {
+  min-height: 100px;
+  font-size: 16px;
+}
+.safety-request {
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.safety-request blockquote {
+  padding: 12px;
+  border-left: 3px solid var(--border);
+  white-space: pre-wrap;
+}

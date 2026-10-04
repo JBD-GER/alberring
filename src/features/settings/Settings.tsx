@@ -1,3 +1,5 @@
+import { AccountDeletion } from "../safety/AccountDeletion";
+import { SafetySettings } from "../safety/Safety";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
@@ -227,6 +229,8 @@ export function Settings() {
         wurde.
       </div>
       <NotificationPreferences />
+      <SafetySettings />
+      <AccountDeletion />
       <DevicePermissions />
       <PushSettings />
       <section className="settings-card">

@@ -1359,15 +1359,6 @@ export function Chat() {
                         </div>
                         {!m.retracted_at && (
                           <div className="message-actions">
-                            {!own && (
-                              <MessageSafetyActions
-                                messageId={m.id}
-                                senderId={m.sender_id}
-                                senderName={
-                                  m.profiles?.display_name ?? "dieser Person"
-                                }
-                              />
-                            )}
                             <button type="button" onClick={() => setReplyTo(m)}>
                               <CornerUpLeft /> Antworten
                             </button>
@@ -1430,6 +1421,17 @@ export function Chat() {
                                 <Trash2 /> Zurückziehen
                               </button>
                             )}
+                          </div>
+                        )}
+                        {!own && !m.retracted_at && (
+                          <div className="message-safety-actions">
+                            <MessageSafetyActions
+                              messageId={m.id}
+                              senderId={m.sender_id}
+                              senderName={
+                                m.profiles?.display_name ?? "dieser Person"
+                              }
+                            />
                           </div>
                         )}
                         <span className="message-meta">

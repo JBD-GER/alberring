@@ -13,7 +13,7 @@
 .safety-dialog::backdrop {
   background: #12203588;
 }
-.message-actions .safety-dialog button {
+.safety-dialog button {
   font-size: 16px;
   padding: 12px;
 }
@@ -30,4 +30,36 @@
   padding: 12px;
   border-left: 3px solid var(--border);
   white-space: pre-wrap;
+}
+
+.message-safety-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid #e7eeee;
+}
+.message-safety-actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #36575a;
+  font-size: 12px;
+  cursor: pointer;
+}
+.message-safety-actions > button:hover,
+.message-safety-actions > button:focus-visible {
+  background: #e7f3f2;
+}
+.message-safety-actions svg {
+  width: 14px;
+  height: 14px;
+}
+.message-safety-actions [role="status"] {
+  font-size: 12px;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Flag, ShieldCheck } from "lucide-react";
 import { supabase } from "../../lib/supabase";
@@ -82,84 +83,87 @@ export function MessageSafetyActions({
         <Ban /> Person blockieren
       </button>
       {success && <span role="status">{success}</span>}
-      <dialog
-        ref={dialog}
-        className="safety-dialog"
-        aria-labelledby={`safety-title-${messageId}`}
-        onCancel={(e) => {
-          if (action.isPending) e.preventDefault();
-          else setMode(null);
-        }}
-      >
-        <form
-          className="form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            action.mutate();
+      {createPortal(
+        <dialog
+          ref={dialog}
+          className="safety-dialog"
+          aria-labelledby={`safety-title-${messageId}`}
+          onCancel={(e) => {
+            if (action.isPending) e.preventDefault();
+            else setMode(null);
           }}
         >
-          <h3 id={`safety-title-${messageId}`}>
-            {mode === "report" ? "Nachricht melden" : "Person blockieren"}
-          </h3>
-          {mode === "report" ? (
-            <>
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              action.mutate();
+            }}
+          >
+            <h3 id={`safety-title-${messageId}`}>
+              {mode === "report" ? "Nachricht melden" : "Person blockieren"}
+            </h3>
+            {mode === "report" ? (
+              <>
+                <p>
+                  Diese Nachricht einschließlich ihrer Anhänge, der Absender und
+                  Ihre Begründung werden ausschließlich der
+                  Alberring-Administration zur Prüfung zugänglich gemacht.
+                  Andere private Nachrichten werden nicht geteilt.
+                </p>
+                <label>
+                  Grund der Meldung
+                  <textarea
+                    autoFocus
+                    value={reason}
+                    minLength={3}
+                    maxLength={2000}
+                    required
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </label>
+              </>
+            ) : (
               <p>
-                Diese Nachricht einschließlich ihrer Anhänge, der Absender und
-                Ihre Begründung werden ausschließlich der
-                Alberring-Administration zur Prüfung zugänglich gemacht. Andere
-                private Nachrichten werden nicht geteilt.
+                Nachrichten von {senderName} werden für Sie ausgeblendet. Neue
+                Direktnachrichten zwischen Ihnen werden gesperrt. Die
+                Blockierung gilt auch für die Anzeige in Gruppenchats. Unter
+                Einstellungen können Sie sie aufheben.
               </p>
-              <label>
-                Grund der Meldung
-                <textarea
-                  autoFocus
-                  value={reason}
-                  minLength={3}
-                  maxLength={2000}
-                  required
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </label>
-            </>
-          ) : (
-            <p>
-              Nachrichten von {senderName} werden für Sie ausgeblendet. Neue
-              Direktnachrichten zwischen Ihnen werden gesperrt. Die Blockierung
-              gilt auch für die Anzeige in Gruppenchats. Unter Einstellungen
-              können Sie sie aufheben.
-            </p>
-          )}
-          {action.error && (
-            <p role="alert" className="alert error">
-              {safetyError(
-                action.error,
-                "Die Aktion konnte nicht gespeichert werden. Bitte erneut versuchen.",
-              )}
-            </p>
-          )}
-          <div className="form-actions">
-            <button
-              className="secondary"
-              type="button"
-              disabled={action.isPending}
-              onClick={() => setMode(null)}
-            >
-              Abbrechen
-            </button>
-            <button
-              className="primary"
-              type="submit"
-              disabled={action.isPending}
-            >
-              {action.isPending
-                ? "Wird gespeichert …"
-                : mode === "report"
-                  ? "Meldung absenden"
-                  : "Blockierung bestätigen"}
-            </button>
-          </div>
-        </form>
-      </dialog>
+            )}
+            {action.error && (
+              <p role="alert" className="alert error">
+                {safetyError(
+                  action.error,
+                  "Die Aktion konnte nicht gespeichert werden. Bitte erneut versuchen.",
+                )}
+              </p>
+            )}
+            <div className="form-actions">
+              <button
+                className="secondary"
+                type="button"
+                disabled={action.isPending}
+                onClick={() => setMode(null)}
+              >
+                Abbrechen
+              </button>
+              <button
+                className="primary"
+                type="submit"
+                disabled={action.isPending}
+              >
+                {action.isPending
+                  ? "Wird gespeichert …"
+                  : mode === "report"
+                    ? "Meldung absenden"
+                    : "Blockierung bestätigen"}
+              </button>
+            </div>
+          </form>
+        </dialog>,
+        document.body,
+      )}
     </>
   );
 }

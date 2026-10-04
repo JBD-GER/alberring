@@ -19,9 +19,7 @@ insert into public.user_roles(profile_id,role_id,organization_id) values('f20000
 insert into public.role_permissions(role_id,permission_key) values('f3000000-0000-4000-8000-000000000002','messages.use');
 insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,aud,role) values('f1000000-0000-4000-8000-000000000003','safety-3@example.test',now(),'{}','{}','authenticated','authenticated');
 insert into public.profiles(id,auth_user_id,organization_id,display_name,email,status) values('f2000000-0000-4000-8000-000000000003','f1000000-0000-4000-8000-000000000003','f0000000-0000-4000-8000-000000000001','Safety 3','safety-3@example.test','active');
-insert into public.roles(id,organization_id,name,system_key) values('f3000000-0000-4000-8000-000000000003','f0000000-0000-4000-8000-000000000001','Safety role 3','employee');
-insert into public.user_roles(profile_id,role_id,organization_id) values('f2000000-0000-4000-8000-000000000003','f3000000-0000-4000-8000-000000000003','f0000000-0000-4000-8000-000000000001');
-insert into public.role_permissions(role_id,permission_key) values('f3000000-0000-4000-8000-000000000003','messages.use');
+insert into public.user_roles(profile_id,role_id,organization_id) values('f2000000-0000-4000-8000-000000000003','f3000000-0000-4000-8000-000000000002','f0000000-0000-4000-8000-000000000001');
 insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,aud,role) values('f1000000-0000-4000-8000-000000000004','safety-4@example.test',now(),'{}','{}','authenticated','authenticated');
 insert into public.profiles(id,auth_user_id,organization_id,display_name,email,status) values('f2000000-0000-4000-8000-000000000004','f1000000-0000-4000-8000-000000000004','f0000000-0000-4000-8000-000000000002','Safety 4','safety-4@example.test','active');
 insert into public.roles(id,organization_id,name,system_key) values('f3000000-0000-4000-8000-000000000004','f0000000-0000-4000-8000-000000000002','Safety role 4','super_admin');

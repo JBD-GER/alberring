@@ -67,6 +67,11 @@ $$;
 revoke all on function public.list_message_blocks() from public,anon;
 grant execute on function public.list_message_blocks() to authenticated;
 
+-- Direct message writes were revoked in workflow_authorization_hardening.
+-- Remove the obsolete self-referencing INSERT check (which otherwise recurses
+-- when SELECT acquires an additional policy subquery); send_message owns writes.
+alter policy messages_member_insert on public.messages with check (false);
+
 create policy messages_blocked_sender_hidden on public.messages as restrictive for select to authenticated
 using(not exists(select 1 from public.message_blocks b where b.blocker_id=private.current_profile_id() and b.blocked_id=sender_id));
 
@@ -309,3 +314,6 @@ begin
 end $$;
 revoke all on function public.complete_account_deletion_request(uuid,text,boolean) from public,anon;
 grant execute on function public.complete_account_deletion_request(uuid,text,boolean) to authenticated;
+
+-- Server maintenance retains the same privileges as existing application tables.
+grant all on public.message_blocks,public.message_reports,public.account_deletion_requests to service_role;

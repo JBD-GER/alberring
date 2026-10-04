@@ -23,6 +23,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { MessageSafetyActions, safetyError } from "../safety/Safety";
 import { Link, useNavigate, useParams } from "react-router";
 import { format, isToday, isYesterday } from "date-fns";
 import { de } from "date-fns/locale";
@@ -797,7 +798,10 @@ export function Chat() {
         p_reply_to_id: replyTo?.id ?? null,
         p_client_nonce: crypto.randomUUID(),
       });
-      if (error) throw error;
+      if (error)
+        throw new Error(
+          safetyError(error, "Die Nachricht konnte nicht gesendet werden."),
+        );
       if (file) {
         const ext =
           file.name
@@ -911,7 +915,13 @@ export function Chat() {
               p_message_id: input.id,
               p_reason: "Vom Absender zurückgezogen",
             });
-      if (result.error) throw result.error;
+      if (result.error)
+        throw new Error(
+          safetyError(
+            result.error,
+            "Die Nachricht konnte nicht geändert werden.",
+          ),
+        );
     },
     onSuccess: () =>
       void queryClient.invalidateQueries({
@@ -1411,6 +1421,17 @@ export function Chat() {
                                 <Trash2 /> Zurückziehen
                               </button>
                             )}
+                          </div>
+                        )}
+                        {!own && !m.retracted_at && (
+                          <div className="message-safety-actions">
+                            <MessageSafetyActions
+                              messageId={m.id}
+                              senderId={m.sender_id}
+                              senderName={
+                                m.profiles?.display_name ?? "dieser Person"
+                              }
+                            />
                           </div>
                         )}
                         <span className="message-meta">

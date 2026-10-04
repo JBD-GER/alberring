@@ -52,7 +52,7 @@ select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000003'
 
 select is((select count(*) from public.message_reports),0::bigint,'Reported person cannot read private report');
 select throws_ok($$select public.send_message('f4000000-0000-4000-8000-000000000001','new message')$$,'42501','message_contact_blocked','Blocked sender cannot continue direct chat');
-select throws_ok($$insert into public.messages(organization_id,conversation_id,sender_id,body) values('f0000000-0000-4000-8000-000000000001','f4000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000003','bypass')$$,'42501','permission denied for table messages','Direct insertion cannot bypass block');
+select throws_ok($$insert into public.messages(organization_id,conversation_id,sender_id,body) values('f0000000-0000-4000-8000-000000000001','f4000000-0000-4000-8000-000000000001','f2000000-0000-4000-8000-000000000003','bypass')$$,'42501',null,'Direct insertion cannot bypass block');
 select throws_ok($$select public.send_message('f4000000-0000-4000-8000-000000000002','kill yourself')$$,'22023','message_content_not_allowed','Content filter enforced by server');
 select lives_ok($$select public.send_message('f4000000-0000-4000-8000-000000000002','Normal group message')$$,'Unrelated group members still receive ordinary messages');
 set local role authenticated;

@@ -33,6 +33,9 @@ insert into public.conversations(id,organization_id,type,name,created_by) values
 insert into public.conversation_members(conversation_id,profile_id,organization_id) values('f4000000-0000-4000-8000-000000000002','f2000000-0000-4000-8000-000000000002','f0000000-0000-4000-8000-000000000001');
 insert into public.conversation_members(conversation_id,profile_id,organization_id) values('f4000000-0000-4000-8000-000000000002','f2000000-0000-4000-8000-000000000003','f0000000-0000-4000-8000-000000000001');
 insert into public.messages(id,organization_id,conversation_id,sender_id,body) values('f5000000-0000-4000-8000-000000000002','f0000000-0000-4000-8000-000000000001','f4000000-0000-4000-8000-000000000002','f2000000-0000-4000-8000-000000000003','Review this message 2');
+insert into public.message_attachments(organization_id,conversation_id,message_id,uploaded_by,storage_path,original_name,mime_type,size_bytes)
+select organization_id,conversation_id,id,sender_id,organization_id::text||'/'||conversation_id::text||'/'||id::text||'/test.pdf','test.pdf','application/pdf',100
+from public.messages where id in ('f5000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000002');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 
@@ -43,6 +46,7 @@ select lives_ok($$select public.report_message('f5000000-0000-4000-8000-00000000
 select is((select count(*) from public.message_reports),1::bigint,'Report is deduplicated');
 select lives_ok($$select public.set_message_block('f2000000-0000-4000-8000-000000000003',true)$$,'Block sender');
 select is((select count(*) from public.messages),0::bigint,'Blocked sender hidden in direct and group messages');
+select is((select count(*) from public.message_attachments),0::bigint,'Blocked attachment metadata is hidden');
 select ok(not exists(select 1 from public.list_conversations() where last_message is not null),'List previews cannot leak blocked messages');
 select ok(not private.can_access_message_attachment('f4000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001'),'Blocked attachment download is denied');
 select throws_ok($$select public.send_message('f4000000-0000-4000-8000-000000000001','new message')$$,'42501','message_contact_blocked','Blocker cannot continue direct chat');
@@ -59,6 +63,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000004',true);
 
 select is((select count(*) from public.message_reports),0::bigint,'Other tenant admin cannot see reports');
+select is((select count(*) from public.message_attachments),0::bigint,'Foreign admin cannot enumerate reported attachments');
 select throws_ok($$select public.report_message('f5000000-0000-4000-8000-000000000001','Foreign report')$$,'42501','permission_denied','Other tenant cannot report guessed message');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000001',true);
@@ -67,8 +72,11 @@ select is((select count(*) from public.messages),0::bigint,'Admin is not granted
 select is((select count(*) from public.message_reports),1::bigint,'Own tenant admin sees exactly reported content');
 select throws_ok($$select public.report_message('f5000000-0000-4000-8000-000000000002','Not a member')$$,'42501','permission_denied','Nonmember admin cannot report unshared messages');
 select ok(private.can_access_message_attachment('f4000000-0000-4000-8000-000000000001','f5000000-0000-4000-8000-000000000001'),'Own admin can inspect specifically reported attachments');
+select is((select count(*) from public.message_attachments),1::bigint,'Nonmember admin can enumerate only the reported attachment');
+select is((select message_id from public.message_attachments),'f5000000-0000-4000-8000-000000000001'::uuid,'Metadata belongs to the open report');
 select ok(not private.can_access_message_attachment('f4000000-0000-4000-8000-000000000002','f5000000-0000-4000-8000-000000000002'),'Own admin cannot inspect other private attachments');
 select lives_ok($$select public.resolve_message_report((select id from public.message_reports limit 1),true,'Policy violation removed')$$,'Admin may remove only a reported message');
+select is((select count(*) from public.message_attachments),0::bigint,'Closing the report revokes nonmember attachment metadata access');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','f1000000-0000-4000-8000-000000000002',true);
 

@@ -39,7 +39,7 @@ revoke all on public.message_reports from public,anon,authenticated;
 grant select on public.message_reports to authenticated;
 create policy message_reports_scoped on public.message_reports for select to authenticated using(
  organization_id=private.current_organization_id() and
- (reporter_id=private.current_profile_id() or private.has_system_role(array['super_admin']))
+ (reporter_id=private.current_profile_id() or private.has_permission('data.correct'))
 );
 
 create or replace function public.set_message_block(p_profile_id uuid,p_blocked boolean)
@@ -274,7 +274,7 @@ revoke all on public.account_deletion_requests from public,anon,authenticated;
 grant select on public.account_deletion_requests to authenticated;
 create policy account_deletion_read_scoped on public.account_deletion_requests for select to authenticated using (
  organization_id=private.current_organization_id() and
- (profile_id=private.current_profile_id() or private.has_system_role(array['super_admin']))
+ (profile_id=private.current_profile_id() or private.has_permission('data.correct'))
 );
 create function public.request_account_deletion()
 returns uuid language plpgsql security definer set search_path=pg_catalog,public as $$

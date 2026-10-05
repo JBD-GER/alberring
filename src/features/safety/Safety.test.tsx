@@ -60,7 +60,39 @@ describe("message safety", () => {
         p_reason: "Belästigende Nachricht",
       }),
     );
-    await screen.findByRole("status");
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Ihre Meldung zur Nachricht von Sam Muster wurde gespeichert",
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Meldung eingegangen" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Meldung absenden" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Verstanden" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it("does not show a receipt before the server has accepted the report", async () => {
+    let finish!: (result: { error: null }) => void;
+    mocks.rpc.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Melden" }));
+    fireEvent.change(screen.getByLabelText("Grund der Meldung"), {
+      target: { value: "Scam" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Meldung absenden" }));
+    await waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Meldung eingegangen" }),
+    ).toBeNull();
+    finish({ error: null });
+    await screen.findByRole("heading", { name: "Meldung eingegangen" });
   });
   it("cancelling a block has no side effect", () => {
     mount();

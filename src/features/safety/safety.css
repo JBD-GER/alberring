@@ -21,6 +21,20 @@
   min-height: 100px;
   font-size: 16px;
 }
+.safety-receipt {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #e7f3f2;
+  color: #184f48;
+}
+.safety-receipt svg {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
 .safety-request {
   padding: 16px 0;
   border-top: 1px solid var(--border);

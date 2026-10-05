@@ -55,11 +55,17 @@ export function MessageSafetyActions({
           ? "Meldung wurde an die Administration übergeben."
           : "Person wurde blockiert.",
       );
-      setMode(null);
+      // Keep the report receipt in the modal until it is acknowledged. An
+      // inline message is easy to miss in a long, scrolling conversation.
+      if (mode === "block") setMode(null);
       await Promise.all([
-        client.invalidateQueries({ queryKey: ["messages"] }),
-        client.invalidateQueries({ queryKey: ["conversations"] }),
-        client.invalidateQueries({ queryKey: ["message-blocks"] }),
+        ...(mode === "block"
+          ? [
+              client.invalidateQueries({ queryKey: ["messages"] }),
+              client.invalidateQueries({ queryKey: ["conversations"] }),
+              client.invalidateQueries({ queryKey: ["message-blocks"] }),
+            ]
+          : []),
         client.invalidateQueries({ queryKey: ["message-reports"] }),
       ]);
     },
@@ -82,7 +88,7 @@ export function MessageSafetyActions({
       <button type="button" onClick={() => open("block")}>
         <Ban /> Person blockieren
       </button>
-      {success && <span role="status">{success}</span>}
+      {success && mode !== "report" && <span role="status">{success}</span>}
       {createPortal(
         <dialog
           ref={dialog}
@@ -93,74 +99,102 @@ export function MessageSafetyActions({
             else setMode(null);
           }}
         >
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              action.mutate();
-            }}
-          >
-            <h3 id={`safety-title-${messageId}`}>
-              {mode === "report" ? "Nachricht melden" : "Person blockieren"}
-            </h3>
-            {mode === "report" ? (
-              <>
-                <p>
-                  Diese Nachricht einschließlich ihrer Anhänge, der Absender und
-                  Ihre Begründung werden ausschließlich der
-                  Alberring-Administration zur Prüfung zugänglich gemacht.
-                  Andere private Nachrichten werden nicht geteilt.
-                </p>
-                <label>
-                  Grund der Meldung
-                  <textarea
-                    autoFocus
-                    value={reason}
-                    minLength={3}
-                    maxLength={2000}
-                    required
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                </label>
-              </>
-            ) : (
+          {mode === "report" && success ? (
+            <div className="form">
+              <h3 id={`safety-title-${messageId}`}>Meldung eingegangen</h3>
+              <p role="status" className="safety-receipt">
+                <ShieldCheck aria-hidden="true" />
+                Ihre Meldung zur Nachricht von {senderName} wurde gespeichert
+                und an die Administration zur Prüfung übergeben.
+              </p>
               <p>
-                Nachrichten von {senderName} werden für Sie ausgeblendet. Neue
-                Direktnachrichten zwischen Ihnen werden gesperrt. Die
-                Blockierung gilt auch für die Anzeige in Gruppenchats. Unter
-                Einstellungen können Sie sie aufheben.
+                Unter Einstellungen → Ihre Inhaltsmeldungen können Sie den
+                Bearbeitungsstand ansehen.
               </p>
-            )}
-            {action.error && (
-              <p role="alert" className="alert error">
-                {safetyError(
-                  action.error,
-                  "Die Aktion konnte nicht gespeichert werden. Bitte erneut versuchen.",
-                )}
-              </p>
-            )}
-            <div className="form-actions">
-              <button
-                className="secondary"
-                type="button"
-                disabled={action.isPending}
-                onClick={() => setMode(null)}
-              >
-                Abbrechen
-              </button>
-              <button
-                className="primary"
-                type="submit"
-                disabled={action.isPending}
-              >
-                {action.isPending
-                  ? "Wird gespeichert …"
-                  : mode === "report"
-                    ? "Meldung absenden"
-                    : "Blockierung bestätigen"}
-              </button>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="primary"
+                  autoFocus
+                  onClick={() => {
+                    setSuccess("");
+                    setMode(null);
+                  }}
+                >
+                  Verstanden
+                </button>
+              </div>
             </div>
-          </form>
+          ) : (
+            <form
+              className="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                action.mutate();
+              }}
+            >
+              <h3 id={`safety-title-${messageId}`}>
+                {mode === "report" ? "Nachricht melden" : "Person blockieren"}
+              </h3>
+              {mode === "report" ? (
+                <>
+                  <p>
+                    Diese Nachricht einschließlich ihrer Anhänge, der Absender
+                    und Ihre Begründung werden ausschließlich der
+                    Alberring-Administration zur Prüfung zugänglich gemacht.
+                    Andere private Nachrichten werden nicht geteilt.
+                  </p>
+                  <label>
+                    Grund der Meldung
+                    <textarea
+                      autoFocus
+                      value={reason}
+                      minLength={3}
+                      maxLength={2000}
+                      required
+                      onChange={(e) => setReason(e.target.value)}
+                    />
+                  </label>
+                </>
+              ) : (
+                <p>
+                  Nachrichten von {senderName} werden für Sie ausgeblendet. Neue
+                  Direktnachrichten zwischen Ihnen werden gesperrt. Die
+                  Blockierung gilt auch für die Anzeige in Gruppenchats. Unter
+                  Einstellungen können Sie sie aufheben.
+                </p>
+              )}
+              {action.error && (
+                <p role="alert" className="alert error">
+                  {safetyError(
+                    action.error,
+                    "Die Aktion konnte nicht gespeichert werden. Bitte erneut versuchen.",
+                  )}
+                </p>
+              )}
+              <div className="form-actions">
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={action.isPending}
+                  onClick={() => setMode(null)}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  className="primary"
+                  type="submit"
+                  disabled={action.isPending}
+                >
+                  {action.isPending
+                    ? "Wird gespeichert …"
+                    : mode === "report"
+                      ? "Meldung absenden"
+                      : "Blockierung bestätigen"}
+                </button>
+              </div>
+            </form>
+          )}
         </dialog>,
         document.body,
       )}

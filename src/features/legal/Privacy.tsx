@@ -12,7 +12,7 @@ export default function Privacy() {
         >
           <img src="/alberring-logo.png" alt="Alberring Ambulante Pflege" />
         </Link>
-        <p className="eyebrow">Mitarbeiter-App · Stand 29. September 2026</p>
+        <p className="eyebrow">Mitarbeiter-App · Stand 4. Oktober 2026</p>
         <h1>Datenschutzerklärung</h1>
         <p className="privacy-intro">
           Diese Hinweise erläutern die Verarbeitung personenbezogener Daten in
@@ -80,6 +80,15 @@ export default function Privacy() {
             <strong>Kommunikation:</strong> Nachrichten, ausgewählte Fotos,
             Dateien und Sprachnachrichten sowie freiwillig gesendete
             Standortangaben einschließlich genauer Koordinaten.
+          </li>
+          <li>
+            <strong>Schutz und Löschanträge:</strong> Blockierungen, gemeldete
+            Nachrichten einschließlich ihrer Anhänge, Meldegründe und
+            Bearbeitungsvermerke. Nur die konkret gemeldeten Inhalte werden der
+            Administration Ihrer Organisation zur Prüfung zugänglich gemacht;
+            dies gibt keinen allgemeinen Zugriff auf private Chats. Bei
+            Löschanträgen speichern wir Eingang, Frist, Kontaktadresse und den
+            Bearbeitungsnachweis.
           </li>
           <li>
             <strong>Technischer Betrieb:</strong> Anmelde- und
@@ -246,9 +255,14 @@ export default function Privacy() {
           Daten gelöscht oder ihre Verarbeitung eingeschränkt. Kontosperrung und
           Löschung sämtlicher verknüpfter Betriebsdaten sind unterschiedliche
           Vorgänge. Auch Sicherungskopien und die Aufbewahrungszyklen der
-          Dienstleister sind zu berücksichtigen. Auskunft zur Speicherdauer
-          Ihrer konkreten Daten und Löschanfragen erhalten Sie über den
-          Datenschutzkontakt.
+          Dienstleister sind zu berücksichtigen. Die Kontolöschung können Sie
+          unter „Einstellungen → Konto löschen“ direkt in der App beantragen.
+          Die Administration bearbeitet den Antrag innerhalb von 7 Tagen und
+          bestätigt den Abschluss an Ihre hinterlegte E-Mail-Adresse. Konto und
+          zugehörige personenbezogene Daten werden gelöscht; gesetzlich
+          erforderliche Aufbewahrung wird auf die nötigen Daten beschränkt und
+          in der Bestätigung erläutert. Auskunft zur Speicherdauer Ihrer
+          konkreten Daten erhalten Sie über den Datenschutzkontakt.
         </p>
       </section>
 

@@ -63,12 +63,15 @@ export function Documents() {
   const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [upload, setUpload] = useState(false);
+  const [uploaded, setUploaded] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<FolderRow | null>(null);
   const [activeFolder, setActiveFolder] = useState<string | "sick" | null>(
     null,
   );
   const canUpload = has("documents.view_own") || has("documents.manage");
+  const canUseFolders =
+    has("documents.view_folders") || has("documents.manage_folders");
   const { data: folders = [] } = useQuery({
     queryKey: ["document-folders"],
     queryFn: async () => {
@@ -149,7 +152,10 @@ export function Documents() {
         {canUpload && (
           <button
             className="primary compact"
-            onClick={() => setUpload((v) => !v)}
+            onClick={() => {
+              setUploaded(false);
+              setUpload((v) => !v);
+            }}
           >
             <Plus /> Dokument hochladen
           </button>
@@ -189,14 +195,16 @@ export function Documents() {
             </span>
           </button>
         ))}
-        <button
-          className="document-folder add"
-          onClick={() => setFolderOpen((value) => !value)}
-        >
-          <FolderPlus />
-          <strong>Ordner anlegen</strong>
-          <span>Privat oder als Admin vorgeben</span>
-        </button>
+        {canUseFolders && (
+          <button
+            className="document-folder add"
+            onClick={() => setFolderOpen((value) => !value)}
+          >
+            <FolderPlus />
+            <strong>Ordner anlegen</strong>
+            <span>Privat oder als Admin vorgeben</span>
+          </button>
+        )}
       </div>
       {selectedFolder &&
         has("data.correct") &&
@@ -230,9 +238,19 @@ export function Documents() {
         <DocumentUpload
           onDone={() => {
             setUpload(false);
+          }}
+          onUploaded={() => {
+            setUpload(false);
+            setUploaded(true);
             void client.invalidateQueries({ queryKey: ["documents"] });
+            void client.invalidateQueries({ queryKey: ["document-folders"] });
           }}
         />
+      )}
+      {uploaded && (
+        <p role="status" className="alert success">
+          Ihr Dokument wurde erfolgreich hochgeladen und gespeichert.
+        </p>
       )}
       <label className="search">
         <Search />
@@ -550,11 +568,19 @@ function FolderForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function DocumentUpload({ onDone }: { onDone: () => void }) {
+export function DocumentUpload({
+  onDone,
+  onUploaded,
+}: {
+  onDone: () => void;
+  onUploaded: () => void;
+}) {
   const { appSession, has } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const canManage = has("documents.manage");
+  const canUseFolders =
+    has("documents.view_folders") || has("documents.manage_folders");
   const [visibility, setVisibility] = useState(
     canManage ? "organization" : "personal",
   );
@@ -575,11 +601,11 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("document_folders")
-        .select("id,name")
+        .select("id,name,scope,owner_profile_id")
         .is("archived_at", null)
         .order("name");
       if (error) throw error;
-      return data as Array<{ id: string; name: string }>;
+      return data as FolderRow[];
     },
   });
   const { data: categories = [] } = useQuery({
@@ -604,11 +630,16 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
       const fd = new FormData(form),
         title = String(fd.get("title")).trim(),
         teamId = String(fd.get("teamId") ?? "");
-      if (!title) throw new Error("Titel fehlt.");
+      if (title.length < 2)
+        throw new Error("Bitte einen Titel mit mindestens 2 Zeichen eingeben.");
       if (visibility === "team" && !teamId)
         throw new Error("Bitte ein Team auswählen.");
       let folderId = String(fd.get("folderId") ?? "");
       const newFolder = String(fd.get("newFolder") ?? "").trim();
+      if ((folderId || newFolder) && !canUseFolders)
+        throw new Error(
+          "Für Ihr Konto sind keine Dokumentordner freigegeben. Laden Sie die Datei ohne Ordner hoch.",
+        );
       if (newFolder) {
         const { data: folder, error: folderError } = await supabase.rpc(
           "create_document_folder",
@@ -684,9 +715,20 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
         throw finalizeError;
       }
     },
-    onSuccess: onDone,
-    onError: (e) =>
-      setError(e instanceof Error ? e.message : "Upload fehlgeschlagen."),
+    onSuccess: onUploaded,
+    onError: (e) => {
+      const message =
+        e && typeof e === "object" && "message" in e ? String(e.message) : "";
+      setError(
+        message === "folder_not_available"
+          ? "Dieser Ordner ist nicht mehr verfügbar. Wählen Sie einen anderen Ordner oder ‚Ohne Ordner‘ und versuchen Sie es erneut."
+          : message === "category_not_available"
+            ? "Diese Kategorie ist nicht mehr verfügbar. Wählen Sie eine andere Kategorie oder ‚Keine Kategorie‘."
+            : e instanceof Error && !message.includes("row-level security")
+              ? e.message
+              : "Das Dokument konnte nicht hochgeladen werden. Ihre Datei bleibt ausgewählt. Bitte versuchen Sie es erneut.",
+      );
+    },
   });
   return (
     <section className="editor-card">
@@ -695,7 +737,12 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
           <span className="eyebrow">DOKUMENTE</span>
           <h2>Dokument hochladen</h2>
         </div>
-        <button className="icon-button" onClick={onDone} aria-label="Schließen">
+        <button
+          className="icon-button"
+          onClick={onDone}
+          disabled={upload.isPending}
+          aria-label="Schließen"
+        >
           ×
         </button>
       </div>
@@ -703,12 +750,13 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
         className="form two-column"
         onSubmit={(e) => {
           e.preventDefault();
+          setError("");
           upload.mutate(e.currentTarget);
         }}
       >
         <label>
           Titel
-          <input name="title" required maxLength={160} />
+          <input name="title" required minLength={2} maxLength={160} />
         </label>
         <label>
           Sichtbarkeit
@@ -737,21 +785,25 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
             </select>
           </label>
         )}
-        <label>
-          Ordner
-          <select name="folderId">
-            <option value="">Ohne Ordner</option>
-            {folders.map((folder) => (
-              <option value={folder.id} key={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Neuen Ordner anlegen (optional)
-          <input name="newFolder" maxLength={120} />
-        </label>
+        {canUseFolders && (
+          <>
+            <label>
+              Ordner
+              <select name="folderId">
+                <option value="">Ohne Ordner</option>
+                {folders.map((folder) => (
+                  <option value={folder.id} key={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Neuen Ordner anlegen (optional)
+              <input name="newFolder" maxLength={120} />
+            </label>
+          </>
+        )}
         <label>
           Kategorie
           <select name="categoryId">
@@ -777,9 +829,18 @@ function DocumentUpload({ onDone }: { onDone: () => void }) {
             required
           />
         </label>
-        {error && <div className="alert error full">{error}</div>}
+        {error && (
+          <div className="alert error full" role="alert">
+            {error}
+          </div>
+        )}
         <div className="form-actions full">
-          <button type="button" className="secondary" onClick={onDone}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onDone}
+            disabled={upload.isPending}
+          >
             Abbrechen
           </button>
           <button className="primary" disabled={upload.isPending}>

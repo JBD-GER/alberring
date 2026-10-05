@@ -2,13 +2,6 @@ name: Signed mobile release artifacts
 on:
   push:
     tags: ["v[0-9]*"]
-    branches: ["codex/ios-review-preparation"]
-    paths:
-      - ".github/workflows/mobile-release.yml"
-      - "scripts/prepare-release-secrets.py"
-      - "scripts/upload-ios.py"
-      - "scripts/configure-ios-signing.mjs"
-      - "package-lock.json"
   workflow_dispatch:
     inputs:
       platform:

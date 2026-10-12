@@ -22,7 +22,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode appBuildNumber
         versionName appVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner(project.hasProperty('releaseSmokeTest')
+            ? "de.alberring.connect.ReleaseSmokeInstrumentation"
+            : "androidx.test.runner.AndroidJUnitRunner")
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -47,9 +49,39 @@ android {
         }
         release {
             if (releaseSigning) signingConfig signingConfigs.release
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        releaseSmoke {
+            initWith release
+            applicationIdSuffix '.smoke'
+            versionNameSuffix '-smoke'
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            testProguardFiles 'proguard-test.pro'
+        }
+    }
+    testBuildType project.hasProperty('releaseSmokeTest') ? 'releaseSmoke' : 'debug'
+}
+
+// ioncamera incorrectly declares JUnit as a runtime dependency. Do not package
+// it in the app: a shrunk partial JUnit would shadow the instrumentation APK.
+configurations.configureEach {
+    if (!name.toLowerCase().contains('test') &&
+            (name.endsWith('RuntimeClasspath') || name.endsWith('CompileClasspath'))) {
+        exclude group: 'junit', module: 'junit'
+    }
+}
+
+// ioncamera 1.0.2 still reads removed Window bar colors. The small, version-
+// guarded compatibility fix runs before D8/R8; see buildSrc/README.md.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.instrumentation.transformClassesWith(
+            de.alberring.nativebuild.CameraEdgeToEdgeFix,
+            com.android.build.api.instrumentation.InstrumentationScope.ALL
+        ) {}
     }
 }
 
@@ -68,6 +100,9 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    // Keep app/test runtimes aligned: AndroidX Test needs SuspendToFutureAdapter,
+    // absent from the 1.1.0 version pulled in transitively by the camera stack.
+    implementation 'androidx.concurrent:concurrent-futures-ktx:1.3.0'
     implementation project(':capacitor-cordova-android-plugins')
 }
 

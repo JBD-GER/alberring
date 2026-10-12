@@ -1,4 +1,5 @@
 import { authRedirect } from "../../services/platform/links";
+import { Capacitor } from "@capacitor/core";
 import { disablePush } from "../../services/platform/push";
 import { useRef, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
@@ -94,7 +95,9 @@ export function Login() {
   const requestedPath = (loc.state as { from?: unknown } | null)?.from;
   const nextPath =
     typeof requestedPath === "string" &&
-    (requestedPath === "/android" || requestedPath.startsWith("/app/")) &&
+    (requestedPath === "/android" ||
+      requestedPath === "/installation" ||
+      requestedPath.startsWith("/app/")) &&
     !/[\\\\?#]/.test(requestedPath)
       ? requestedPath
       : "/app/dashboard";
@@ -573,7 +576,9 @@ function AcceptInviteForm() {
       const { error } = await supabase.auth.refreshSession();
       if (error) throw error;
       await refreshAppSession();
-      nav("/app/dashboard", { replace: true });
+      nav(Capacitor.isNativePlatform() ? "/app/dashboard" : "/installation", {
+        replace: true,
+      });
     } catch {
       setMessage(
         "Ihr Passwort wurde gespeichert, aber die Aktivierung konnte nicht abgeschlossen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut. Sie müssen Ihr Passwort nicht erneut festlegen.",

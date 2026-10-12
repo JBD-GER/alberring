@@ -8,20 +8,22 @@ const pending = {
 };
 
 describe("installation links in authentication emails", () => {
-  it("does not create dead store buttons before approval", () => {
+  it("only links to the authenticated installation portal", () => {
     const html = storeLinksHtml(pending);
-    expect(html).not.toContain("href=");
-    expect(html).toContain("iPhone / iPad");
+    expect(html.match(/href=/g)).toHaveLength(1);
+    expect(html).toContain('href="https://app.alberring.de/installation"');
     expect(html).toContain("Android");
+    expect(html).toContain("iPhone");
+    expect(html).not.toContain("ConfirmationURL");
   });
-  it("allows iOS to be released while Android is pending", () => {
+  it("never exposes direct store links even after a store is approved", () => {
     const html = storeLinksHtml({
       ...pending,
       iosAppStoreUrl: "https://apps.apple.com/de/app/alberring/id1234567890",
     });
-    expect(html.match(/href=/g)).toHaveLength(1);
-    expect(html).toContain("Android</strong>");
-    expect(html).not.toContain("ConfirmationURL");
+    expect(html).not.toContain("apps.apple.com");
+    expect(html).not.toContain("play.google.com");
+    expect(html).not.toContain(".apk");
   });
   it("accepts the production Android package", () => {
     expect(() =>

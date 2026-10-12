@@ -21,9 +21,13 @@ const state = vi.hoisted(() => ({
   disablePush: vi.fn(),
   recoverySession: true,
   invited: false,
+  native: false,
   sessionId: null as string | null,
   loading: false,
   sessionError: "",
+}));
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { isNativePlatform: () => state.native },
 }));
 vi.mock("../../lib/supabase", () => ({
   supabase: {
@@ -65,6 +69,7 @@ import {
 beforeEach(() => {
   state.recoverySession = true;
   state.invited = false;
+  state.native = false;
   state.sessionId = null;
   state.loading = false;
   state.sessionError = "";
@@ -86,20 +91,23 @@ beforeEach(() => {
   state.disablePush.mockReset().mockResolvedValue(undefined);
 });
 afterEach(cleanup);
-it("preserves the protected Android download destination after login", async () => {
-  state.sessionId = "signed-in-employee";
-  render(
-    <MemoryRouter
-      initialEntries={[{ pathname: "/login", state: { from: "/android" } }]}
-    >
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/android" element={<h1>Android-Download</h1>} />
-      </Routes>
-    </MemoryRouter>,
-  );
-  expect(await screen.findByText("Android-Download")).toBeVisible();
-});
+it.each(["/android", "/installation"])(
+  "preserves the protected %s destination after login",
+  async (destination) => {
+    state.sessionId = "signed-in-employee";
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: "/login", state: { from: destination } }]}
+      >
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path={destination} element={<h1>Installationsbereich</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Installationsbereich")).toBeVisible();
+  },
+);
 function submitPassword() {
   render(
     <MemoryRouter>
@@ -234,7 +242,8 @@ function acceptInvite() {
     <MemoryRouter initialEntries={["/accept-invite"]}>
       <Routes>
         <Route path="/accept-invite" element={<AcceptInvite />} />
-        <Route path="/app/dashboard" element={<p>Konto geöffnet</p>} />
+        <Route path="/installation" element={<p>Konto geöffnet</p>} />
+        <Route path="/app/dashboard" element={<p>Native App geöffnet</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -554,4 +563,19 @@ it("permits another explicit attempt after a network rejection", async () => {
   expect(screen.getByRole("button", { name: "Link bestätigen" })).toBeEnabled();
   expect(screen.getByTestId("location")).toHaveTextContent(emailToken);
   expect(screen.queryByLabelText("Neues Passwort")).toBeNull();
+});
+
+it("offers device selection only after password and profile activation succeed", async () => {
+  acceptInvite();
+  await screen.findByText("Konto geöffnet");
+  expect(state.update).toHaveBeenCalledOnce();
+  expect(state.activateProfile).toHaveBeenCalledWith("activate_my_profile");
+  expect(state.refreshSession).toHaveBeenCalledOnce();
+});
+
+it("keeps employees who already use the native app in the app after activation", async () => {
+  state.native = true;
+  acceptInvite();
+  await screen.findByText("Native App geöffnet");
+  expect(screen.queryByText("Konto geöffnet")).toBeNull();
 });

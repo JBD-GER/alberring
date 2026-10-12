@@ -44,24 +44,14 @@ export function validateStoreLinks(config) {
 
 export function storeLinksHtml(config) {
   validateStoreLinks(config);
-  const ready = Object.keys(labels).some((field) => config[field]);
-  const rows = Object.entries(labels)
-    .map(([field, label]) => {
-      const value = config[field];
-      const action = value
-        ? `<a href="${value}" style="display: block; padding: 12px 16px; border: 1px solid #075a5e; border-radius: 8px; color: #075a5e; font-size: 16px; line-height: 24px; font-weight: 700; text-decoration: none; text-align: center">${label === "Android" ? "Android · Google Play öffnen" : "iPhone / iPad · App Store öffnen"}</a>`
-        : `<p style="margin: 0; padding: 12px 16px; border: 1px solid #dfe8e7; border-radius: 8px; color: #526063; font-size: 15px; line-height: 23px"><strong>${label}</strong><br />Download nach Store-Freigabe verfügbar.</p>`;
-      return `<tr><td style="padding: 6px 0">${action}</td></tr>`;
-    })
-    .join("\n");
   return `<!-- MOBILE_STORE_LINKS:START -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin-top: 24px; border-top: 1px solid #dfe8e7">
 <tr><td style="padding: 20px 0 6px">
-<h2 style="margin: 0 0 8px; color: #1d2b2e; font-size: 20px; line-height: 28px">Alberring auf Ihrem Smartphone</h2>
-<p style="margin: 0; color: #526063; font-size: 15px; line-height: 23px">${ready ? "Legen Sie zuerst über den persönlichen Link oben Ihr Passwort fest. Laden Sie anschließend die App herunter und melden Sie sich mit Ihrer E-Mail-Adresse und Ihrem Passwort an." : "Die Apps für iPhone und Android werden vorbereitet. Sie können Ihren Zugang bereits über den persönlichen Link oben einrichten und Alberring im Browser nutzen."}</p>
+<h2 style="margin: 0 0 8px; color: #1d2b2e; font-size: 20px; line-height: 28px">Ein Konto für Web, Android und iPhone</h2>
+<p style="margin: 0; color: #526063; font-size: 15px; line-height: 23px">Legen Sie über den persönlichen Link oben Ihr Passwort fest. Bei einer neuen Einladung erscheint nach der Aktivierung die Geräteauswahl. Dort können Sie Alberring im Browser öffnen oder eine verfügbare App installieren. Auf allen Geräten gelten dieselben Zugangsdaten.</p>
 </td></tr>
-${rows}
-<tr><td style="padding-top: 8px"><p style="margin: 0; color: #526063; font-size: 13px; line-height: 20px">Der Download allein schaltet keinen Zugang frei. Alberring ist ausschließlich für freigeschaltete Mitarbeitende bestimmt.</p></td></tr>
+<tr><td style="padding: 12px 0"><a href="https://app.alberring.de/installation" style="display: block; padding: 12px 16px; border: 1px solid #075a5e; border-radius: 8px; color: #075a5e; font-size: 16px; line-height: 24px; font-weight: 700; text-decoration: none; text-align: center">Geschützte Geräteauswahl öffnen</a></td></tr>
+<tr><td><p style="margin: 0; color: #526063; font-size: 13px; line-height: 20px">Nur aktive Mitarbeiterkonten können den Installationsbereich öffnen. Ein weitergeleiteter Link allein gewährt keinen Zugang. Bereits aktivierte Konten melden sich einfach mit dem bestehenden Passwort an.</p></td></tr>
 </table>
 <!-- MOBILE_STORE_LINKS:END -->`;
 }

@@ -234,17 +234,17 @@ export function Settings() {
       <DevicePermissions />
       <PushSettings />
       <section className="settings-card">
-        <h3>Android-App installieren oder aktualisieren</h3>
+        <h3>Alberring auf Ihren Geräten</h3>
         <p>
-          Die aktuelle Android-Version steht im geschützten Downloadbereich
-          bereit.
+          Web, Android und iPhone verwenden dasselbe Mitarbeiterkonto. Die
+          verfügbaren Apps finden Sie im geschützten Installationsbereich.
         </p>
         <a
-          href="https://app.alberring.de/android"
+          href="https://app.alberring.de/installation"
           target="_blank"
           rel="noopener noreferrer"
         >
-          Android-Download öffnen
+          Geräteauswahl öffnen
         </a>
       </section>
       <section className="settings-card">

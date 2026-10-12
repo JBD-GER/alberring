@@ -53,9 +53,9 @@ jobs:
         run: python3 scripts/prepare-release-secrets.py android
       - name: Verify the upload key can be read by Java
         run: keytool -list -keystore "$ANDROID_KEYSTORE_PATH" -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS"
-      - name: Build the signed bundle and run Android lint
+      - name: Build the signed bundle and direct-install APK and run Android lint
         working-directory: android
-        run: ./gradlew --no-daemon bundleRelease lintRelease
+        run: ./gradlew --no-daemon bundleRelease assembleRelease lintRelease
       - name: Verify bundle signature and retain provenance
         shell: bash
         run: |
@@ -67,6 +67,10 @@ jobs:
           keytool -printcert -jarfile "$bundle" > mobile-artifacts/android/upload-certificate.txt
           version=$(node -p 'require("./mobile-version.json").version')
           cp "$bundle" "mobile-artifacts/android/Alberring-${version}-${BUILD_NUMBER}.aab"
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > mobile-artifacts/android/apk-signature-verification.txt
+          cp "$apk" "mobile-artifacts/android/Alberring-${version}-${BUILD_NUMBER}.apk"
+          sha256sum "$apk" > mobile-artifacts/android/apk-sha256.txt
           sha256sum "$bundle" > mobile-artifacts/android/sha256.txt
           git rev-parse HEAD > mobile-artifacts/android/source-commit.txt
           cp mobile-version.json mobile-artifacts/android/mobile-version.json

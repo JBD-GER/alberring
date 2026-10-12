@@ -91,7 +91,14 @@ export function Login() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  if (session) return <Navigate to="/app/dashboard" replace />;
+  const requestedPath = (loc.state as { from?: unknown } | null)?.from;
+  const nextPath =
+    typeof requestedPath === "string" &&
+    (requestedPath === "/android" || requestedPath.startsWith("/app/")) &&
+    !/[\\\\?#]/.test(requestedPath)
+      ? requestedPath
+      : "/app/dashboard";
+  if (session) return <Navigate to={nextPath} replace />;
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -115,7 +122,7 @@ export function Login() {
         );
         return;
       }
-      nav((loc.state as { from?: string } | null)?.from ?? "/app/dashboard", {
+      nav(nextPath, {
         replace: true,
       });
     } catch {

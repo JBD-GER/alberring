@@ -1,6 +1,10 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { useAuth } from "../features/auth/AuthProvider";
-export function ProtectedRoute() {
+export function ProtectedRoute({
+  requireOnboarding = true,
+}: {
+  requireOnboarding?: boolean;
+}) {
   const {
     session,
     appSession,
@@ -50,7 +54,11 @@ export function ProtectedRoute() {
         </button>
       </main>
     );
-  if (appSession.onboarding.required && loc.pathname !== "/onboarding")
+  if (
+    requireOnboarding &&
+    appSession.onboarding.required &&
+    loc.pathname !== "/onboarding"
+  )
     return <Navigate to="/onboarding" replace />;
   if (!appSession.onboarding.required && loc.pathname === "/onboarding")
     return <Navigate to="/app/dashboard" replace />;

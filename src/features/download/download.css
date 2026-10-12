@@ -1,0 +1,31 @@
+.android-download {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+  line-height: 1.65;
+}
+.android-download > img {
+  display: block;
+  width: 200px;
+  max-width: 70%;
+  margin-bottom: 32px;
+}
+.android-download h1 {
+  line-height: 1.2;
+}
+.android-download section,
+.android-download details {
+  margin-top: 28px;
+}
+.android-download li {
+  margin-bottom: 12px;
+  padding-left: 4px;
+}
+.android-download summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.android-download .primary {
+  margin-top: 12px;
+  min-height: 48px;
+}

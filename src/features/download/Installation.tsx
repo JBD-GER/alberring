@@ -1,4 +1,4 @@
-import { Apple, Monitor, Smartphone } from "lucide-react";
+import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { Link } from "react-router";
 import distribution from "../../../mobile-distribution.json";
 import "./download.css";
@@ -35,7 +35,7 @@ export default function Installation() {
           </Link>
         </section>
         <section>
-          <Apple aria-hidden="true" />
+          <Tablet aria-hidden="true" />
           <h2>iPhone und iPad</h2>
           {distribution.iosAppStoreUrl ? (
             <>

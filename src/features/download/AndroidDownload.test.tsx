@@ -4,12 +4,12 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
-  signed: vi.fn(),
+  download: vi.fn(),
   authenticated: false,
   active: true,
 }));
 vi.mock("../../lib/supabase", () => ({
-  supabase: { storage: { from: () => ({ createSignedUrl: state.signed }) } },
+  supabase: { storage: { from: () => ({ download: state.download }) } },
 }));
 vi.mock("../auth/AuthProvider", () => ({
   useAuth: () => ({
@@ -28,7 +28,7 @@ import { ProtectedRoute } from "../../app/ProtectedRoute";
 beforeEach(() => {
   state.authenticated = false;
   state.active = true;
-  state.signed
+  state.download
     .mockReset()
     .mockResolvedValue({ data: null, error: new Error("denied") });
 });
@@ -48,14 +48,14 @@ function show() {
 it("requires an employee login before requesting a binary", () => {
   show();
   expect(screen.getByText("Anmeldung erforderlich")).toBeVisible();
-  expect(state.signed).not.toHaveBeenCalled();
+  expect(state.download).not.toHaveBeenCalled();
 });
 it("rejects a suspended employee even with an authenticated session", () => {
   state.authenticated = true;
   state.active = false;
   show();
   expect(screen.getByText("Zugang nicht verfügbar")).toBeVisible();
-  expect(state.signed).not.toHaveBeenCalled();
+  expect(state.download).not.toHaveBeenCalled();
 });
 it("allows active employees to download before onboarding and reports failures", async () => {
   state.authenticated = true;
@@ -63,10 +63,8 @@ it("allows active employees to download before onboarding and reports failures",
   fireEvent.click(
     screen.getByRole("button", { name: "Android-App herunterladen" }),
   );
-  expect(state.signed).toHaveBeenCalledWith(
+  expect(state.download).toHaveBeenCalledWith(
     `android/${androidRelease.filename}`,
-    120,
-    { download: androidRelease.filename },
   );
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Download konnte nicht gestartet",

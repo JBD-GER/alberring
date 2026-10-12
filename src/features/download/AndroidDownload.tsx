@@ -13,14 +13,20 @@ export default function AndroidDownload() {
     setError("");
     try {
       // Storage RLS also checks active employee and organization status.
-      // Never persist the short-lived signed URL in application storage.
+      // Fetch with the employee session; never generate a shareable signed URL.
       const result = await supabase.storage
         .from("app-releases")
-        .createSignedUrl(`android/${androidRelease.filename}`, 120, {
-          download: androidRelease.filename,
-        });
-      if (result.error || !result.data?.signedUrl) throw result.error;
-      window.location.assign(result.data.signedUrl);
+        .download(`android/${androidRelease.filename}`);
+      if (result.error || !result.data) throw result.error;
+      const url = URL.createObjectURL(result.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = androidRelease.filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      // Allow the browser to start the download before releasing the blob.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       setError(
         "Der Download konnte nicht gestartet werden. Bitte prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
@@ -96,6 +102,7 @@ export default function AndroidDownload() {
         </p>
       </details>
       <p>
+        <Link to="/installation">Zur Geräteauswahl</Link> ·{" "}
         <Link to="/app/dashboard">Alberring im Browser öffnen</Link> ·{" "}
         <Link to="/datenschutz">Datenschutz</Link>
       </p>

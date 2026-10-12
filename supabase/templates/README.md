@@ -17,14 +17,10 @@ Die Vorlagen ändern nur Inhalt und Gestaltung. Das Versandlimit und die Empfän
 
 Referenzen: [Supabase E-Mail-Vorlagen](https://supabase.com/docs/guides/auth/auth-email-templates), [lokale Konfiguration](https://supabase.com/docs/guides/local-development/customizing-email-templates).
 
-## iPhone- und Android-Installationslinks
+## Geschützte Geräteauswahl
 
-Stand 29.09.2026: Beide tatsächlichen URLs in `mobile-distribution.json` sind ausdrücklich `null`. Die App ist noch in keinem Store freigegeben. Die Vorlagen zeigen beide Plattformen mit dem Hinweis „Download nach Store-Freigabe verfügbar.“ Es werden weder App-IDs noch funktionierende Store-Links erfunden.
+Stand 12.10.2026: Nach der Einladungsannahme im Browser führt die Aktivierung zu `/installation`. Nur angemeldete, aktive Mitarbeitende können diesen Bereich nutzen. Die Auswahl bietet Web und den privaten Android-Download. iOS wartet in App Store Connect noch auf Prüfung; `iosAppStoreUrl` bleibt deshalb `null`. Erst nach tatsächlicher Freigabe wird der verifizierte Unlisted-Link eingetragen. Bereits installierte native Apps benötigen keinen erneuten Installationsschritt.
 
-Nach Freigabe ausschließlich die verifizierten Links der Alberring-App eintragen und `npm run mobile:links` ausführen. iOS und Android können unabhängig nacheinander aktiviert werden. `npm run mobile:links:check` prüft, dass beide Vorlagen zur Konfiguration passen. Der Generator akzeptiert nur direkte HTTPS-Links zu `apps.apple.com` beziehungsweise das Produktions-Package `de.alberring.connect` auf `play.google.com`; Tracking- und Authentifizierungsparameter sind ausgeschlossen. Ein syntaktisch gültiger Apple-Link ersetzt nicht die Prüfung der tatsächlichen App-ID und Unlisted-Freigabe in App Store Connect.
+Einladungs- und Recovery-E-Mails enthalten ausschließlich den Link zum geschützten Portal, keine Store-URLs, APK-URLs oder Download-Token. `npm run mobile:links` hält beide Vorlagen aktuell. Die Einladung und die Passwortzurücksetzung verwenden weiterhin unverändert `{{ .ConfirmationURL }}`. Änderungen müssen zusätzlich in den gehosteten Supabase-Vorlagen gespeichert werden; der Generator versendet keine E-Mails.
 
-Die zuerst nötige Kontofreischaltung verwendet weiterhin unverändert `{{ .ConfirmationURL }}`. Mitarbeitende nehmen die Einladung an, legen ihr Passwort fest und melden sich anschließend in der installierten App an. Store-Links enthalten keine persönlichen Einladungslinks, Token oder Mitarbeiterdaten. Die URLs stammen aus der versionierten Betreiberkonfiguration, nicht aus veränderbaren Benutzermetadaten.
-
-Auch die Recovery-Vorlage enthält den Installationsbereich: Der bestehende Wiederholungsversand einer bereits begonnenen Einladung kann über diesen Auth-Typ laufen. Damit gibt es bei beiden Pfaden dieselben Downloadinformationen.
-
-Die Anpassung liegt im Repository und muss später zusätzlich im gehosteten Supabase-Projekt hinterlegt werden. Dieser Generator verschickt keine E-Mails und verändert keine Live-Konfiguration. Der letzte dokumentierte STRATO-Zustellfehler bleibt unabhängig davon offen; siehe `docs/MAILVERSAND_2026-09-24.md`.
+Android-Dateien werden mit der bestehenden Mitarbeitersitzung aus dem privaten Storage geladen. Es wird kein weitergebbarer signierter Downloadlink erzeugt. Eine bereits heruntergeladene Installationsdatei kann technisch weitergereicht werden; der Datenzugriff bleibt davon unabhängig durch den bestehenden Mitarbeiterlogin und serverseitige Berechtigungen geschützt.

@@ -10,6 +10,7 @@ const Privacy = lazy(() => import("../features/legal/Privacy"));
 const AndroidDownload = lazy(
   () => import("../features/download/AndroidDownload"),
 );
+const Installation = lazy(() => import("../features/download/Installation"));
 const ForgotPassword = lazy(() =>
   import("../features/auth/AuthScreens").then((m) => ({
     default: m.ForgotPassword,
@@ -175,7 +176,10 @@ export const router = createBrowserRouter([
       { path: "/privacy", element: <Navigate to="/datenschutz" replace /> },
       {
         element: <ProtectedRoute requireOnboarding={false} />,
-        children: [{ path: "/android", element: page(<AndroidDownload />) }],
+        children: [
+          { path: "/android", element: page(<AndroidDownload />) },
+          { path: "/installation", element: page(<Installation />) },
+        ],
       },
       {
         element: <ProtectedRoute />,

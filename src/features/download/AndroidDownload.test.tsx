@@ -22,7 +22,8 @@ vi.mock("../auth/AuthProvider", () => ({
     signOut: vi.fn(),
   }),
 }));
-import AndroidDownload, { androidRelease } from "./AndroidDownload";
+import AndroidDownload from "./AndroidDownload";
+import { androidRelease } from "./release";
 import { ProtectedRoute } from "../../app/ProtectedRoute";
 beforeEach(() => {
   state.authenticated = false;

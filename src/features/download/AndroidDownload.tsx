@@ -2,14 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Download } from "lucide-react";
 import { supabase } from "../../lib/supabase";
-import mobileVersion from "../../../mobile-version.json";
+import { androidRelease } from "./release";
 import "./download.css";
-
-export const androidRelease = {
-  version: mobileVersion.version,
-  build: mobileVersion.buildNumber,
-  filename: `Alberring-${mobileVersion.version}-${mobileVersion.buildNumber}.apk`,
-};
 
 export default function AndroidDownload() {
   const [busy, setBusy] = useState(false);

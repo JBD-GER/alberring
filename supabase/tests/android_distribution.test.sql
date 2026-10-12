@@ -24,6 +24,9 @@ select is((select count(*) from storage.objects where bucket_id='app-releases'),
 select throws_ok($$insert into storage.objects(bucket_id,name) values('app-releases','android/Alberring-1.0.4-12.apk')$$,'42501',null,'employees cannot upload binaries');
 with changed as (update storage.objects set name='android/Alberring-1.0.4-12.apk' where bucket_id='app-releases' returning id)
 select is((select count(*) from changed),0::bigint,'employees cannot replace binaries');
+-- Match the Storage API delete context so the test reaches RLS instead of the
+-- Storage SQL-deletion guard. This is confined to this rolled-back test.
+select set_config('storage.allow_delete_query','true',true);
 with removed as (delete from storage.objects where bucket_id='app-releases' returning id)
 select is((select count(*) from removed),0::bigint,'employees cannot delete binaries');
 select set_config('request.jwt.claim.sub','ad100000-0000-4000-8000-000000000002',true);

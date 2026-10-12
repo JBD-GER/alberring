@@ -56,7 +56,12 @@ vi.mock("./AuthProvider", () => ({
     refreshAppSession: state.refreshAppSession,
   }),
 }));
-import { AcceptInvite, ForgotPassword, ResetPassword } from "./AuthScreens";
+import {
+  AcceptInvite,
+  ForgotPassword,
+  ResetPassword,
+  Login,
+} from "./AuthScreens";
 beforeEach(() => {
   state.recoverySession = true;
   state.invited = false;
@@ -81,6 +86,20 @@ beforeEach(() => {
   state.disablePush.mockReset().mockResolvedValue(undefined);
 });
 afterEach(cleanup);
+it("preserves the protected Android download destination after login", async () => {
+  state.sessionId = "signed-in-employee";
+  render(
+    <MemoryRouter
+      initialEntries={[{ pathname: "/login", state: { from: "/android" } }]}
+    >
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/android" element={<h1>Android-Download</h1>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  expect(await screen.findByText("Android-Download")).toBeVisible();
+});
 function submitPassword() {
   render(
     <MemoryRouter>

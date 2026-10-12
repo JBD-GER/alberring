@@ -234,6 +234,20 @@ export function Settings() {
       <DevicePermissions />
       <PushSettings />
       <section className="settings-card">
+        <h3>Android-App installieren oder aktualisieren</h3>
+        <p>
+          Die aktuelle Android-Version steht im geschützten Downloadbereich
+          bereit.
+        </p>
+        <a
+          href="https://app.alberring.de/android"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Android-Download öffnen
+        </a>
+      </section>
+      <section className="settings-card">
         <h3>Datenschutz</h3>
         <p>Informationen zur Verarbeitung Ihrer Daten und zu Ihren Rechten.</p>
         <Link className="text-link" to="/datenschutz">

@@ -67,7 +67,7 @@ android {
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.instrumentation.transformClassesWith(
-            de.alberring.build.CameraEdgeToEdgeFix,
+            de.alberring.nativebuild.CameraEdgeToEdgeFix,
             com.android.build.api.instrumentation.InstrumentationScope.ALL
         ) {}
     }

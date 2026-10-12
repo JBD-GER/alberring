@@ -57,9 +57,19 @@ android {
             versionNameSuffix '-smoke'
             signingConfig signingConfigs.debug
             matchingFallbacks = ['release']
+            testProguardFiles 'proguard-test.pro'
         }
     }
     testBuildType project.hasProperty('releaseSmokeTest') ? 'releaseSmoke' : 'debug'
+}
+
+// ioncamera incorrectly declares JUnit as a runtime dependency. Do not package
+// it in the app: a shrunk partial JUnit would shadow the instrumentation APK.
+configurations.configureEach {
+    if (!name.toLowerCase().contains('test') &&
+            (name.endsWith('RuntimeClasspath') || name.endsWith('CompileClasspath'))) {
+        exclude group: 'junit', module: 'junit'
+    }
 }
 
 // ioncamera 1.0.2 still reads removed Window bar colors. The small, version-

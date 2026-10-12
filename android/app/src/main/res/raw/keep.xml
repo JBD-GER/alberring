@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ioncamera resolves these editor resources with Resources.getIdentifier(). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/activity_image_editor,@layout/image_editor_view,@id/imageEditorView,@id/cropperView,@id/imageView,@id/cancelButton,@id/OKButton,@id/rotateButton,@id/flipButton" />

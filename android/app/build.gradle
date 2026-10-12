@@ -47,9 +47,29 @@ android {
         }
         release {
             if (releaseSigning) signingConfig signingConfigs.release
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        releaseSmoke {
+            initWith release
+            applicationIdSuffix '.smoke'
+            versionNameSuffix '-smoke'
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
+    }
+    testBuildType project.hasProperty('releaseSmokeTest') ? 'releaseSmoke' : 'debug'
+}
+
+// ioncamera 1.0.2 still reads removed Window bar colors. The small, version-
+// guarded compatibility fix runs before D8/R8; see buildSrc/README.md.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.instrumentation.transformClassesWith(
+            de.alberring.build.CameraEdgeToEdgeFix,
+            com.android.build.api.instrumentation.InstrumentationScope.ALL
+        ) {}
     }
 }
 

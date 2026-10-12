@@ -59,3 +59,45 @@ jobs:
           -configuration Debug -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
           -derivedDataPath ios/DerivedData CODE_SIGNING_ALLOWED=NO build
+  android-release-smoke:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'ios'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [35, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: android-actions/setup-android@v3
+        with: { packages: platform-tools }
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - run: npm ci
+      - run: npm run mobile:sync
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: ./gradlew --no-daemon -p buildSrc test
+        working-directory: android
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: cd android && ./gradlew --no-daemon -PreleaseSmokeTest connectedReleaseSmokeAndroidTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-release-smoke-${{ matrix.api-level }}
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+            android/buildSrc/build/reports/tests/
+          retention-days: 7

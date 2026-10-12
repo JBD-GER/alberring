@@ -7,6 +7,8 @@ const config: CapacitorConfig = {
   appId: development ? "de.alberring.connect.dev" : "de.alberring.connect",
   appName: development ? "Alberring Dev" : "Alberring",
   webDir: "dist-native",
+  // Keep pinch zoom available, including zooming back out after field focus.
+  zoomEnabled: true,
   loggingBehavior: development ? "debug" : "none",
   server: {
     hostname: "localhost",

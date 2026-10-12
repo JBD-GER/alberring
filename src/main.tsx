@@ -6,6 +6,8 @@ import { AuthProvider } from "./features/auth/AuthProvider";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { NetworkStatus } from "./components/common/NetworkStatus";
 import { PlatformRuntime } from "./components/common/PlatformRuntime";
+import { AndroidUpdate } from "./components/common/AndroidUpdate";
+import { initializeNativeViewport } from "./services/platform/viewport";
 const PwaUpdate = lazy(() =>
   import("./components/common/PwaUpdate").then((m) => ({
     default: m.PwaUpdate,
@@ -40,6 +42,7 @@ import "./styles/onboarding.css";
 import "./styles/product-tour.css";
 import "./styles/platform.css";
 import "./styles/input-safety.css";
+initializeNativeViewport();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, retry: 1 },
@@ -54,6 +57,7 @@ createRoot(document.getElementById("root")!).render(
           <RouterProvider router={router} />
           <NetworkStatus />
           <PlatformRuntime />
+          <AndroidUpdate />
           {import.meta.env.MODE !== "native" && (
             <Suspense fallback={null}>
               <PwaUpdate />

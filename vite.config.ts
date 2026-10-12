@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
       transformIndexHtml(html) {
         if (mode !== "native") return html;
         const policy =
-          "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: https://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'";
+          "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://app.alberring.de; media-src 'self' blob: https://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'";
         return html.replace(
           "<head>",
           `<head><meta http-equiv="Content-Security-Policy" content="${policy}" />`,

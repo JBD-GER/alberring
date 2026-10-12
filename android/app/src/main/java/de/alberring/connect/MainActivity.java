@@ -13,6 +13,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AlberringSecureStoragePlugin.class);
         registerPlugin(AlberringSettingsPlugin.class);
         super.onCreate(savedInstanceState);
+        // Honor width=device-width instead of a desktop-sized layout viewport.
+        // Capacitor's zoomEnabled setting keeps pinch-to-zoom recovery available.
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            getBridge().getWebView().getSettings().setUseWideViewPort(true);
+            getBridge().getWebView().getSettings().setLoadWithOverviewMode(false);
+        }
     }
 
     @Override

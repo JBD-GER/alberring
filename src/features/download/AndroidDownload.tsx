@@ -85,6 +85,10 @@ export default function AndroidDownload() {
       <section>
         <h2>Spätere Updates</h2>
         <p>
+          Ab Version 1.0.4 informiert Sie die Android-App automatisch über
+          verfügbare Updates. Tippen Sie im Hinweis auf „Update herunterladen“.
+        </p>
+        <p>
           Öffnen Sie wieder <strong>app.alberring.de/android</strong> und
           installieren Sie die neue Datei über die vorhandene App. Updates
           werden nicht automatisch über Google Play installiert. Ihre

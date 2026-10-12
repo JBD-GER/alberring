@@ -78,7 +78,7 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Die Kamera wird benötigt, damit Sie Fotos direkt innerhalb der App aufnehmen und hochladen können.</string>
+	<string>Alberring verwendet die Kamera, damit Sie Fotos im Teamchat teilen oder ein Tachofoto als Nachweis zu einer Kilometerstandsmeldung hochladen können. Fotos werden erst gesendet, wenn Sie die Nachricht oder Meldung absenden.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Das Mikrofon wird benötigt, um Sprachnachrichten innerhalb der App aufzunehmen.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

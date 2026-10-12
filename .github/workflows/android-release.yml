@@ -70,6 +70,8 @@ jobs:
           sha256sum "$bundle" > mobile-artifacts/android/sha256.txt
           git rev-parse HEAD > mobile-artifacts/android/source-commit.txt
           cp mobile-version.json mobile-artifacts/android/mobile-version.json
+          cp android/app/build/outputs/mapping/release/mapping.txt mobile-artifacts/android/
+          cp android/app/build/outputs/mapping/release/configuration.txt mobile-artifacts/android/
       - uses: actions/upload-artifact@v4
         with:
           name: alberring-signed-android

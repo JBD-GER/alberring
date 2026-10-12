@@ -29,3 +29,40 @@
   ) {
   font-size: max(16px, 1rem) !important;
 }
+
+/* Native date editors have an intrinsic width which can grow a grid track or
+   push past a modal on iOS. Allow both the field and its grid item to shrink. */
+:root :is(.form, .wf-form, .wf-form-grid) > *,
+:root :is(.form, .wf-form) label {
+  min-inline-size: 0;
+}
+
+:root :is(input, select, textarea) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+}
+
+:root input:is([type="date"], [type="datetime-local"], [type="time"]) {
+  display: block;
+  inline-size: 100%;
+  min-block-size: 48px;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: start;
+}
+
+:root input::-webkit-date-and-time-value {
+  min-block-size: 1.5em;
+  text-align: start;
+}
+
+:root input::-webkit-datetime-edit {
+  min-inline-size: 0;
+  padding: 0;
+  font: inherit;
+}
+
+:root input::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}

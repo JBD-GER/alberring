@@ -1,6 +1,15 @@
 import Capacitor
+import WebKit
 
 final class AlberringBridgeViewController: CAPBridgeViewController {
+    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+        // The native iOS viewport limits automatic focus magnification only.
+        // User pinch zoom must remain available for accessibility and recovery.
+        configuration.ignoresViewportScaleLimits = true
+        return configuration
+    }
+
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(AlberringSecureStoragePlugin())
         bridge?.registerPluginInstance(AlberringSettingsPlugin())

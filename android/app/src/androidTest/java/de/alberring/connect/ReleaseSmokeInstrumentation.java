@@ -28,9 +28,10 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
     @Override public void onStart() {
         runTest(1, "loginAndNativeBridge", this::loginAndNativeBridge);
         runTest(2, "cameraEditor", this::cameraEditor);
+        runTest(3, "inputViewportAndZoomRecovery", this::inputViewportAndZoomRecovery);
         Bundle result = new Bundle();
         result.putString(REPORT_KEY_STREAMRESULT, failures == 0
-            ? "\nOK (2 tests)\n" : "\nFAILURES!!! Tests run: 2, Failures: " + failures + "\n");
+            ? "\nOK (3 tests)\n" : "\nFAILURES!!! Tests run: 3, Failures: " + failures + "\n");
         finish(Activity.RESULT_OK, result);
     }
 
@@ -41,7 +42,7 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
         status.putString("id", "InstrumentationTestRunner");
         status.putString("class", getClass().getName());
         status.putString("test", name);
-        status.putInt("numtests", 2);
+        status.putInt("numtests", 3);
         status.putInt("current", current);
         sendStatus(1, status);
         try {
@@ -123,6 +124,42 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
                 if (result.equals("\"pending\"")) Thread.sleep(100);
             }
             require("\"ok\"".equals(result), "Native plugin bridge failed: " + result);
+        } finally { runOnMainSync(activity::finish); waitForIdleSync(); }
+    }
+
+    private void inputViewportAndZoomRecovery() throws Exception {
+        Activity activity = launch("de.alberring.connect.MainActivity");
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            while (!"true".equals(evaluate(activity, "!!document.querySelector('input[type=password]')"))) {
+                require(System.nanoTime() < deadline, "Login screen must load");
+                Thread.sleep(100);
+            }
+            runOnMainSync(() -> {
+                WebView view = webView(activity.getWindow().getDecorView());
+                require(view.getSettings().getBuiltInZoomControls(), "Pinch zoom recovery must be enabled");
+                require(view.getSettings().getUseWideViewPort(), "Device-width viewport must be honored");
+            });
+            evaluate(activity, "document.querySelector('input[type=password]').focus()");
+            waitForIdleSync();
+            Thread.sleep(500); // Let the native keyboard and focus animation settle.
+            require("true".equals(evaluate(activity,
+                "Math.abs(visualViewport.scale - 1) < 0.02 && "
+                + "parseFloat(getComputedStyle(document.querySelector('input[type=password]')).fontSize) >= 16")),
+                "Focusing the login field must preserve viewport scale");
+            // Exercise real user-controlled magnification and recovery using the
+            // WebView API, without changing the release WebView's configuration.
+            runOnMainSync(() -> {
+                WebView view = webView(activity.getWindow().getDecorView());
+                view.clearFocus();
+                view.zoomBy(1.5f);
+            });
+            Thread.sleep(400);
+            require("true".equals(evaluate(activity, "visualViewport.scale > 1.2")), "User zoom must work");
+            runOnMainSync(() -> webView(activity.getWindow().getDecorView()).zoomBy(1f / 1.5f));
+            Thread.sleep(400);
+            require("true".equals(evaluate(activity, "Math.abs(visualViewport.scale - 1) < 0.05")),
+                "The view must be able to return to its original scale");
         } finally { runOnMainSync(activity::finish); waitForIdleSync(); }
     }
 

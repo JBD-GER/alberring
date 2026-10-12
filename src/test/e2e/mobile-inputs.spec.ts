@@ -76,6 +76,7 @@ async function expectReadableControls(page: Page) {
 }
 
 for (const viewport of [
+  { width: 320, height: 640 },
   { width: 390, height: 844 },
   { width: 844, height: 390 },
   { width: 1024, height: 1366 },
@@ -103,6 +104,27 @@ for (const viewport of [
       .click();
     await expect(page.locator(".wf-form textarea")).toBeVisible();
     await expectReadableControls(page);
+    const dates = page.locator('.wf-form input[type="date"]');
+    await expect(dates).toHaveCount(2);
+    for (const date of await dates.all()) {
+      await date.fill("2030-11-12");
+      await date.focus();
+      await expect(date).toHaveValue("2030-11-12");
+      const bounds = await date.evaluate((element) => {
+        const input = element.getBoundingClientRect();
+        const field = element.closest("label")!.getBoundingClientRect();
+        return {
+          inputLeft: input.left,
+          inputRight: input.right,
+          fieldLeft: field.left,
+          fieldRight: field.right,
+          viewport: window.innerWidth,
+        };
+      });
+      expect(bounds.inputLeft).toBeGreaterThanOrEqual(bounds.fieldLeft - 1);
+      expect(bounds.inputRight).toBeLessThanOrEqual(bounds.fieldRight + 1);
+      expect(bounds.inputRight).toBeLessThanOrEqual(bounds.viewport);
+    }
     await page.locator(".wf-form textarea").fill("Synthetische Notiz");
     await expectReadableControls(page);
     expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);

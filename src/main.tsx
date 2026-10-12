@@ -6,6 +6,7 @@ import { AuthProvider } from "./features/auth/AuthProvider";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { NetworkStatus } from "./components/common/NetworkStatus";
 import { PlatformRuntime } from "./components/common/PlatformRuntime";
+import { AndroidUpdate } from "./components/common/AndroidUpdate";
 import { initializeNativeViewport } from "./services/platform/viewport";
 const PwaUpdate = lazy(() =>
   import("./components/common/PwaUpdate").then((m) => ({
@@ -56,6 +57,7 @@ createRoot(document.getElementById("root")!).render(
           <RouterProvider router={router} />
           <NetworkStatus />
           <PlatformRuntime />
+          <AndroidUpdate />
           {import.meta.env.MODE !== "native" && (
             <Suspense fallback={null}>
               <PwaUpdate />

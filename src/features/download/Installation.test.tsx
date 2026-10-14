@@ -42,7 +42,7 @@ it.each(["invited", "suspended"])("denies choices to %s profiles", (status) => {
   expect(screen.getByText("Zugang nicht verfügbar")).toBeVisible();
   expect(screen.queryByRole("link", { name: /Android/ })).toBeNull();
 });
-it("offers active employees browser and Android while Apple approval is pending", () => {
+it("offers active employees browser, Android and the approved iOS app", () => {
   show(true);
   expect(
     screen.getByRole("link", { name: "Webanwendung öffnen" }),
@@ -50,8 +50,11 @@ it("offers active employees browser and Android while Apple approval is pending"
   expect(
     screen.getByRole("link", { name: "Android-App installieren" }),
   ).toHaveAttribute("href", "/android");
-  expect(screen.getByText(/wartet noch auf Apples Freigabe/)).toBeVisible();
+  expect(screen.queryByText(/wartet noch auf Apples Freigabe/)).toBeNull();
   expect(
-    screen.queryByRole("link", { name: "Im App Store öffnen" }),
-  ).toBeNull();
+    screen.getByRole("link", { name: "Im App Store öffnen" }),
+  ).toHaveAttribute(
+    "href",
+    "https://apps.apple.com/de/app/alberring/id6817309574",
+  );
 });

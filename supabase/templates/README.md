@@ -19,7 +19,7 @@ Referenzen: [Supabase E-Mail-Vorlagen](https://supabase.com/docs/guides/auth/aut
 
 ## Geschützte Geräteauswahl
 
-Stand 12.10.2026: Nach der Einladungsannahme im Browser führt die Aktivierung zu `/installation`. Nur angemeldete, aktive Mitarbeitende können diesen Bereich nutzen. Die Auswahl bietet Web und den privaten Android-Download. iOS wartet in App Store Connect noch auf Prüfung; `iosAppStoreUrl` bleibt deshalb `null`. Erst nach tatsächlicher Freigabe wird der verifizierte Unlisted-Link eingetragen. Bereits installierte native Apps benötigen keinen erneuten Installationsschritt.
+Stand 14.10.2026: Nach der Einladungsannahme im Browser führt die Aktivierung zu `/installation`. Nur angemeldete, aktive Mitarbeitende können diesen Bereich nutzen. Die Auswahl bietet Web, den privaten Android-Download und die von Apple freigegebene iPhone-/iPad-App. `iosAppStoreUrl` enthält den im App Store verifizierten Unlisted-Link `https://apps.apple.com/de/app/alberring/id6817309574`. Bereits installierte native Apps benötigen keinen erneuten Installationsschritt.
 
 Einladungs- und Recovery-E-Mails enthalten ausschließlich den Link zum geschützten Portal, keine Store-URLs, APK-URLs oder Download-Token. `npm run mobile:links` hält beide Vorlagen aktuell. Die Einladung und die Passwortzurücksetzung verwenden weiterhin unverändert `{{ .ConfirmationURL }}`. Änderungen müssen zusätzlich in den gehosteten Supabase-Vorlagen gespeichert werden; der Generator versendet keine E-Mails.
 

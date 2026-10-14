@@ -1629,9 +1629,8 @@ export function AdminRoles() {
                   {permissions
                     .filter(
                       (permission) =>
-                        !["leave.create_own", "sick_leave.create_own"].includes(
-                          permission.key,
-                        ) && permission.key !== "data.correct",
+                        permission.key !== "sick_leave.create_own" &&
+                        permission.key !== "data.correct",
                     )
                     .map((permission) => {
                       const active = role.role_permissions.some(
@@ -1662,7 +1661,7 @@ export function AdminRoles() {
                             <strong>{permission.key}</strong>
                             <small>
                               {absenceCreation
-                                ? "Urlaub und Krankmeldungen werden ausschließlich von Super Admins erfasst."
+                                ? "Anträge für andere Mitarbeitende werden ausschließlich von Super Admins erfasst."
                                 : permission.description}
                             </small>
                           </span>

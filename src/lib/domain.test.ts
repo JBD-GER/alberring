@@ -6,12 +6,12 @@ import {
   shouldDeliverNotification,
 } from "./domain";
 describe("Fachlogik", () => {
-  it("berechnet Arbeitstage ohne Wochenende und Feiertag", () =>
+  it("berechnet Montag bis Samstag ohne Sonntag und Feiertag", () =>
     expect(
-      calculateWeekdays("2026-07-06", "2026-07-10", 1, ["2026-07-08"]),
-    ).toBe(4));
+      calculateWeekdays("2026-07-06", "2026-07-12", 1, ["2026-07-08"]),
+    ).toBe(5));
   it("berechnet halbe Tage", () =>
-    expect(calculateWeekdays("2026-07-06", "2026-07-06", 0.5)).toBe(0.5));
+    expect(calculateWeekdays("2026-07-11", "2026-07-11", 0.5)).toBe(0.5));
   it("erkennt überlappende Schichten", () =>
     expect(
       shiftsOverlap(

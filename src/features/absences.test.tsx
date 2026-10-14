@@ -258,6 +258,99 @@ describe("Urlaubsfreigaben", () => {
 });
 
 describe("Abwesenheiten durch die Administration erfassen", () => {
+  it("reicht eigenen Urlaub ohne Personenauswahl ein und bestätigt ihn", async () => {
+    state.permissions = ["leave.view_own", "leave.create_own"];
+    mount(<LeavePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Urlaub beantragen" }));
+    expect(screen.queryByLabelText("Mitarbeiter/in")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Von"), {
+      target: { value: "2030-01-07" },
+    });
+    fireEvent.change(screen.getByLabelText("Bis"), {
+      target: { value: "2030-01-13" },
+    });
+    expect(screen.getByText("6 Arbeitstage")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Antrag speichern" }));
+    await screen.findByText(/Der Urlaubsantrag wurde eingereicht/);
+    expect(state.rpc).toHaveBeenCalledWith("submit_leave_request", {
+      p_leave_type: "annual",
+      p_starts_on: "2030-01-07",
+      p_ends_on: "2030-01-13",
+      p_day_fraction: 1,
+      p_note: null,
+    });
+    expect(
+      state.rpc.mock.calls.some(
+        ([name]) => name === "create_leave_request_for_user",
+      ),
+    ).toBe(false);
+    expect(screen.queryByRole("tab", { name: /Team & Freigabe/ })).toBeNull();
+  });
+
+  it("zählt einen halben Samstag, aber keinen Sonntag", async () => {
+    state.permissions = ["leave.create_own"];
+    mount(<LeavePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Urlaub beantragen" }));
+    for (const label of ["Von", "Bis"])
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value: "2030-01-12" },
+      });
+    fireEvent.change(screen.getByLabelText("Umfang"), {
+      target: { value: "0.5" },
+    });
+    expect(screen.getByText("0,5 Arbeitstage")).toBeTruthy();
+    for (const label of ["Von", "Bis"])
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value: "2030-01-13" },
+      });
+    expect(screen.getByText("0 Arbeitstage")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Antrag speichern",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("behält den Antrag bei einem Speicherfehler zur Korrektur geöffnet", async () => {
+    state.permissions = ["leave.create_own"];
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: [],
+      error:
+        name === "submit_leave_request"
+          ? { message: "overlapping_leave_request" }
+          : null,
+    }));
+    mount(<LeavePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Urlaub beantragen" }));
+    for (const label of ["Von", "Bis"])
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value: "2030-01-12" },
+      });
+    fireEvent.click(screen.getByRole("button", { name: "Antrag speichern" }));
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Von")).toBeTruthy();
+    expect(
+      screen.queryByText(/Der Urlaubsantrag wurde eingereicht/),
+    ).toBeNull();
+  });
+
+  it("gibt mit eigener Beantragung und Team-Freigabe keine Selbstfreigabe frei", async () => {
+    state.permissions = ["leave.create_own", "leave.manage"];
+    state.rpc.mockResolvedValue({
+      data: [leaveRequest(state.actor)],
+      error: null,
+    });
+    mount(<LeavePage />);
+    await screen.findByText(
+      /Eigene Anträge müssen von einer anderen berechtigten Person/,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Antrag bearbeiten" }),
+    ).toBeNull();
+  });
+
   it("zeigt Mitarbeitenden den Urlaubsstatus ohne Erfassungsaktion", async () => {
     state.permissions = ["leave.view_own"];
     mount(<LeavePage />);
@@ -266,7 +359,7 @@ describe("Abwesenheiten durch die Administration erfassen", () => {
       screen.queryByRole("button", { name: /erfassen|stellen|beantragen/i }),
     ).toBeNull();
     expect(
-      screen.getByText(/Neue Anträge erfasst Ihre Administration/),
+      screen.getByText(/Hier sehen Sie Ihre Urlaubsanträge und deren Status/),
     ).toBeTruthy();
   });
 

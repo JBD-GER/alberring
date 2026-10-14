@@ -68,6 +68,7 @@ const more = [
     icon: Umbrella,
     permission: [
       "leave.view_own",
+      "leave.create_own",
       "leave.create",
       "leave.view_team",
       "leave.approve",

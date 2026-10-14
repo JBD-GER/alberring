@@ -62,11 +62,11 @@ insert into storage.objects(bucket_id,name,metadata) values('conversation-avatar
 set local role authenticated;
 select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000003',true);
 select ok(not exists(select 1 from public.my_permissions() where permission_key='leave.create') and not exists(select 1 from public.my_permissions() where permission_key='sick_leave.create'),'Employees cannot create absences');
-select ok(not exists(select 1 from public.my_permissions() where permission_key='leave.create_own') and not exists(select 1 from public.my_permissions() where permission_key='sick_leave.create_own'),'Legacy employee grants cannot enable self-service creation');
+select ok(exists(select 1 from public.my_permissions() where permission_key='leave.create_own') and not exists(select 1 from public.my_permissions() where permission_key='sick_leave.create_own'),'Employees can request their own leave but cannot report sickness');
 select ok(exists(select 1 from public.my_permissions() where permission_key='leave.view_own') and exists(select 1 from public.my_permissions() where permission_key='sick_leave.view_own'),'Employees retain access to their own absence lists');
 select throws_ok($$ select public.create_leave_request_for_user('e2000000-0000-4000-8000-000000000003','annual',date_trunc('week',current_date)::date+7,date_trunc('week',current_date)::date+7,1,null) $$,'42501','permission_denied','Employee leave creation is rejected');
 select throws_ok($$ select public.report_sick_leave_for_user('e2000000-0000-4000-8000-000000000003',current_date,current_date,false,'not_required') $$,'42501','permission_denied','Employee sick leave creation is rejected');
-select throws_ok($$ select public.submit_leave_request('annual',date_trunc('week',current_date)::date+7,date_trunc('week',current_date)::date+7,1,null) $$,'42501','permission_denied','Legacy leave RPC is also administrator-only');
+select lives_ok($$ select public.submit_leave_request('annual',date_trunc('week',current_date)::date+14,date_trunc('week',current_date)::date+14,1,null) $$,'Employee submits own leave through the self-service RPC');
 select throws_ok($$ select public.report_sick_leave(current_date,current_date,false,'not_required') $$,'42501','permission_denied','Legacy sick leave RPC is also administrator-only');
 set local role authenticated;
 select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000004',true);

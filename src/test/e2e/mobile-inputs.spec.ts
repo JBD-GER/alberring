@@ -4,7 +4,7 @@ test.use({ serviceWorkers: "block" });
 
 // Exercise the real screens and their CSS cascade with synthetic API data.
 // No production session, employee data or write requests are needed.
-async function mockEmployee(page: Page) {
+async function mockEmployee(page: Page, ownLeave = false) {
   const user = {
     id: "00000000-0000-4000-8000-000000000001",
     email: "mobile-input-test@example.invalid",
@@ -30,9 +30,11 @@ async function mockEmployee(page: Page) {
       status: "active",
       organization_id: "00000000-0000-4000-8000-000000000002",
     },
-    my_permissions: ["messages.use", "leave.create", "leave.view_own"].map(
-      (permission_key) => ({ permission_key }),
-    ),
+    my_permissions: [
+      "messages.use",
+      ownLeave ? "leave.create_own" : "leave.create",
+      "leave.view_own",
+    ].map((permission_key) => ({ permission_key })),
     get_my_onboarding_state: { required: false, eligible: false },
     get_my_product_tour_state: { required: false, eligible: false },
   };
@@ -152,4 +154,38 @@ test("Native Formulare bleiben auch mit Maus und großer Textgröße lesbar", as
     "font-size",
     "20px",
   );
+});
+
+test("Mitarbeitende beantragen Urlaub auch auf schmalen Touch-Bildschirmen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await mockEmployee(page, true);
+  await page.goto("/app/leave");
+  await page
+    .getByRole("button", { name: "Urlaub beantragen", exact: true })
+    .click();
+  await expect(page.getByLabel("Mitarbeiter/in")).toHaveCount(0);
+  await page.getByLabel("Von", { exact: true }).fill("2030-01-07");
+  await page.getByLabel("Bis", { exact: true }).fill("2030-01-13");
+  await expect(page.getByText("6 Arbeitstage", { exact: true })).toBeVisible();
+  await expectReadableControls(page);
+  const request = page.waitForRequest((request) =>
+    request.url().endsWith("/rpc/submit_leave_request"),
+  );
+  await page
+    .getByRole("button", { name: "Antrag speichern", exact: true })
+    .click();
+  expect((await request).postDataJSON()).toEqual({
+    p_leave_type: "annual",
+    p_starts_on: "2030-01-07",
+    p_ends_on: "2030-01-13",
+    p_day_fraction: 1,
+    p_note: null,
+  });
+  await expect(
+    page.getByText(
+      "Der Urlaubsantrag wurde eingereicht und wartet auf Freigabe.",
+    ),
+  ).toBeVisible();
 });

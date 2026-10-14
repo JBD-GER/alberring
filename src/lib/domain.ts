@@ -1,4 +1,4 @@
-import { eachDayOfInterval, isWeekend, parseISO } from "date-fns";
+import { eachDayOfInterval, format, isSunday, parseISO } from "date-fns";
 export function calculateWeekdays(
   startsOn: string,
   endsOn: string,
@@ -10,7 +10,7 @@ export function calculateWeekdays(
     start: parseISO(startsOn),
     end: parseISO(endsOn),
   }).filter(
-    (day) => !isWeekend(day) && !holidaySet.has(day.toISOString().slice(0, 10)),
+    (day) => !isSunday(day) && !holidaySet.has(format(day, "yyyy-MM-dd")),
   ).length;
   return days * dayFraction;
 }

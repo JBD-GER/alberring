@@ -226,6 +226,7 @@ export const router = createBrowserRouter([
                 element: permitted(
                   [
                     "leave.view_own",
+                    "leave.create_own",
                     "leave.create",
                     "leave.view_team",
                     "leave.approve",

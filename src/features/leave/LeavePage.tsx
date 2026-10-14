@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { eachDayOfInterval, format, isWeekend, parseISO } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { de } from "date-fns/locale";
 import {
   CalendarDays,
@@ -33,6 +33,7 @@ import {
 } from "../../components/form/WorkflowUI";
 import { EmployeeSelect } from "../../components/form/EmployeeSelect";
 import { supabase } from "../../lib/supabase";
+import { calculateWeekdays } from "../../lib/domain";
 import { useAuth } from "../auth/AuthProvider";
 import "./leave.css";
 
@@ -105,11 +106,7 @@ type LeaveFormValues = z.infer<typeof leaveSchema>;
 function workdayPreview(startsOn: string, endsOn: string, dayFraction: string) {
   if (!startsOn || !endsOn || endsOn < startsOn) return 0;
   try {
-    const days = eachDayOfInterval({
-      start: parseISO(startsOn),
-      end: parseISO(endsOn),
-    }).filter((day) => !isWeekend(day)).length;
-    return days * Number(dayFraction);
+    return calculateWeekdays(startsOn, endsOn, dayFraction === "0.5" ? 0.5 : 1);
   } catch {
     return 0;
   }
@@ -122,6 +119,7 @@ export function LeavePage() {
   const { appSession, has } = useAuth();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
+  const [requestSaved, setRequestSaved] = useState(false);
   const [correctionRequest, setCorrectionRequest] =
     useState<LeaveRequest | null>(null);
   const [tab, setTab] = useState<LeaveTab>("mine");
@@ -129,9 +127,10 @@ export function LeavePage() {
     null,
   );
   const [savedApprovalId, setSavedApprovalId] = useState<string | null>(null);
-  const canCreate = has("leave.create");
+  const canCreateForOthers = has("leave.create");
+  const canCreate = canCreateForOthers || has("leave.create_own");
   const canApprove = has("leave.approve") || has("leave.manage");
-  const canApproveOwn = canCreate && has("leave.manage");
+  const canApproveOwn = canCreateForOthers && has("leave.manage");
   const canViewTeam = has("leave.view_team") || canApprove;
   const visibleTab = canViewTeam ? tab : "mine";
 
@@ -201,29 +200,44 @@ export function LeavePage() {
         eyebrow="Abwesenheit"
         title="Urlaub"
         description={
-          canCreate
+          canCreateForOthers
             ? "Urlaubsanträge für Mitarbeitende erfassen und den Freigabestatus verfolgen."
-            : "Hier sehen Sie Ihre Urlaubsanträge und deren Status. Neue Anträge erfasst Ihre Administration."
+            : canCreate
+              ? "Beantragen Sie Ihren Urlaub und verfolgen Sie den Freigabestatus."
+              : "Hier sehen Sie Ihre Urlaubsanträge und deren Status."
         }
         action={
           canCreate ? (
             <button
               type="button"
               className="wf-primary"
-              onClick={() => setFormOpen(true)}
+              onClick={() => {
+                setRequestSaved(false);
+                setFormOpen(true);
+              }}
             >
-              <Plus size={19} /> Urlaubsantrag erfassen
+              <Plus size={19} />
+              {canCreateForOthers
+                ? "Urlaubsantrag erfassen"
+                : "Urlaub beantragen"}
             </button>
           ) : null
         }
       />
 
+      {requestSaved ? (
+        <MutationNotice kind="success">
+          Der Urlaubsantrag wurde eingereicht und wartet auf Freigabe.
+        </MutationNotice>
+      ) : null}
       {formOpen && canCreate ? (
         <LeaveRequestForm
+          key={canCreateForOthers ? "administration" : "own"}
           leaveTypes={availableLeaveTypes}
           onClose={() => setFormOpen(false)}
           onSaved={(profileId) => {
             setFormOpen(false);
+            setRequestSaved(true);
             setTab(profileId === appSession?.profile.id ? "mine" : "team");
           }}
         />
@@ -476,6 +490,8 @@ function LeaveRequestForm({
   onSaved: (profileId: string) => void;
 }) {
   const queryClient = useQueryClient();
+  const { appSession, has } = useAuth();
+  const canCreateForOthers = has("leave.create");
   const [correctionReason, setCorrectionReason] = useState("");
   const {
     register,
@@ -487,7 +503,9 @@ function LeaveRequestForm({
   } = useForm<LeaveFormValues>({
     resolver: zodResolver(leaveSchema),
     defaultValues: {
-      profileId: request?.profile_id ?? "",
+      profileId:
+        request?.profile_id ??
+        (canCreateForOthers ? "" : (appSession?.profile.id ?? "")),
       leaveType: request?.leave_type ?? leaveTypes[0]?.code ?? "annual",
       startsOn: request?.starts_on ?? todayInputValue(),
       endsOn: request?.ends_on ?? todayInputValue(),
@@ -512,14 +530,20 @@ function LeaveRequestForm({
           "Bitte einen Korrekturgrund mit mindestens 3 Zeichen angeben.",
         );
       const { data, error } = await supabase.rpc(
-        request ? "correct_leave_request" : "create_leave_request_for_user",
+        request
+          ? "correct_leave_request"
+          : canCreateForOthers
+            ? "create_leave_request_for_user"
+            : "submit_leave_request",
         {
           ...(request
             ? {
                 p_request_id: request.id,
                 p_correction_reason: correctionReason.trim(),
               }
-            : { p_profile_id: values.profileId }),
+            : canCreateForOthers
+              ? { p_profile_id: values.profileId }
+              : {}),
           p_leave_type: values.leaveType,
           p_starts_on: values.startsOn,
           p_ends_on: values.endsOn,
@@ -538,11 +562,17 @@ function LeaveRequestForm({
   });
   return (
     <WorkflowPanel
-      title={request ? "Urlaubsantrag korrigieren" : "Urlaubsantrag erfassen"}
+      title={
+        request
+          ? "Urlaubsantrag korrigieren"
+          : canCreateForOthers
+            ? "Urlaubsantrag erfassen"
+            : "Urlaub beantragen"
+      }
       description={
         request
           ? "Korrigieren Sie die Antragsdaten. Person, Freigabestatus und bisherige Entscheidungen bleiben erhalten. Jede Änderung wird protokolliert."
-          : "Wählen Sie die Person, für die Sie den Antrag erfassen. Die Berechnung berücksichtigt Wochenenden; Feiertage und Arbeitszeitmodell werden beim Speichern berücksichtigt."
+          : `${canCreateForOthers ? "Wählen Sie die Person und den Zeitraum." : "Wählen Sie Ihren gewünschten Zeitraum."} Es gilt eine 6-Tage-Woche von Montag bis Samstag. Hinterlegte Feiertage werden beim Speichern abgezogen.`
       }
       onClose={onClose}
     >
@@ -566,13 +596,13 @@ function LeaveRequestForm({
             <strong>Mitarbeiter/in:</strong>{" "}
             {request.profiles?.display_name ?? "Bestehende Person"}
           </p>
-        ) : (
+        ) : canCreateForOthers ? (
           <EmployeeSelect
             registration={register("profileId")}
             error={errors.profileId?.message}
             disabled={submit.isPending}
           />
-        )}
+        ) : null}
         {request ? (
           <label className="wf-field">
             <span>Korrekturgrund</span>
@@ -644,8 +674,8 @@ function LeaveRequestForm({
               {preview === 1 ? "Arbeitstag" : "Arbeitstage"}
             </strong>
             <span>
-              Vorläufige Berechnung; verbindlich ist die serverseitig
-              gespeicherte Anzahl.
+              Montag bis Samstag, vor Abzug hinterlegter Feiertage. Verbindlich
+              ist die beim Speichern berechnete Anzahl.
             </span>
           </div>
         </div>

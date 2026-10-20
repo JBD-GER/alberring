@@ -6,7 +6,6 @@ import {
   ChevronRight,
   CircleCheck,
   ClipboardCheck,
-  Clock3,
   MessageCircle,
   Newspaper,
   Package,
@@ -36,7 +35,7 @@ const actions = [
     to: "/app/leave",
     label: "Urlaubsantrag erfassen",
     icon: Umbrella,
-    permission: "leave.create",
+    permission: ["leave.create", "leave.create_own"],
   },
   {
     to: "/app/fleet",
@@ -51,16 +50,7 @@ const actions = [
     permission: "materials.create_own",
   },
 ];
-type Shift = {
-  id: string;
-  title: string;
-  starts_at: string;
-  ends_at: string;
-  status: string;
-  teams: { name: string } | null;
-};
 type DashboardData = {
-  shift: Shift | null;
   news: {
     id: string;
     title: string;
@@ -85,17 +75,6 @@ export function Dashboard() {
       const now = new Date().toISOString(),
         canApprove = has("leave.approve") || has("leave.manage");
       const results = await Promise.all([
-        supabase
-          .from("shifts")
-          .select(
-            "id,title,starts_at,ends_at,status,teams(name),shift_assignments!inner(profile_id)",
-          )
-          .eq("shift_assignments.profile_id", appSession.profile.id)
-          .gte("starts_at", now)
-          .in("status", ["published", "changed"])
-          .order("starts_at")
-          .limit(1)
-          .maybeSingle(),
         supabase
           .from("news_posts")
           .select(
@@ -131,13 +110,12 @@ export function Dashboard() {
       const firstError = results.find((result) => result.error)?.error;
       if (firstError) throw firstError;
       return {
-        shift: (results[0].data as unknown as Shift | null) ?? null,
-        news: (results[1].data as unknown as DashboardData["news"]) ?? null,
-        unread: results[2].count ?? 0,
-        leave: (results[3].data as DashboardData["leave"]) ?? null,
-        approvals: results[4].count ?? 0,
+        news: (results[0].data as unknown as DashboardData["news"]) ?? null,
+        unread: results[1].count ?? 0,
+        leave: (results[2].data as DashboardData["leave"]) ?? null,
+        approvals: results[3].count ?? 0,
         messagesUnread: (
-          (results[5].data ?? []) as Array<{ unread_count: number }>
+          (results[4].data ?? []) as Array<{ unread_count: number }>
         ).reduce(
           (sum, conversation) => sum + Number(conversation.unread_count),
           0,
@@ -148,7 +126,11 @@ export function Dashboard() {
   const hour = new Date().getHours(),
     greeting =
       hour < 11 ? "Guten Morgen" : hour < 17 ? "Guten Tag" : "Guten Abend";
-  const visibleActions = actions.filter((action) => has(action.permission));
+  const visibleActions = actions.filter((action) =>
+    Array.isArray(action.permission)
+      ? action.permission.some(has)
+      : has(action.permission),
+  );
   const firstName = appSession?.profile.display_name.split(" ")[0];
   const canApprove = has("leave.approve") || has("leave.manage");
   const openItems =
@@ -207,76 +189,28 @@ export function Dashboard() {
           className="dashboard-priority-grid"
           aria-label="Ihre Tagesübersicht"
         >
-          <article className="dashboard-card dashboard-shift-card">
+          <article className="dashboard-card dashboard-info-card">
             <div className="dashboard-card-heading">
               <div>
-                <span className="dashboard-card-kicker">Als Nächstes</span>
-                <h2>Nächster Dienst</h2>
+                <span className="dashboard-card-kicker">Abwesenheit</span>
+                <h2>Urlaub einfach verwalten</h2>
               </div>
               <span className="dashboard-card-icon" aria-hidden="true">
-                <CalendarDays />
+                <Umbrella />
               </span>
             </div>
-            {data?.shift ? (
-              <div className="dashboard-shift">
-                <time
-                  className="dashboard-date-tile"
-                  dateTime={data.shift.starts_at}
-                >
-                  <span>
-                    {format(new Date(data.shift.starts_at), "EEE", {
-                      locale: de,
-                    })}
-                  </span>
-                  <strong>
-                    {format(new Date(data.shift.starts_at), "dd")}
-                  </strong>
-                  <small>
-                    {format(new Date(data.shift.starts_at), "MMM", {
-                      locale: de,
-                    })}
-                  </small>
-                </time>
-                <div className="dashboard-shift-details">
-                  <span className="dashboard-shift-time">
-                    <Clock3 aria-hidden="true" />
-                    {format(new Date(data.shift.starts_at), "HH:mm")}–
-                    {format(new Date(data.shift.ends_at), "HH:mm")} Uhr
-                  </span>
-                  <h3>{data.shift.title}</h3>
-                  <p>
-                    {data.shift.teams?.name
-                      ? data.shift.teams.name
-                      : "Persönlicher Dienstplan"}
-                  </p>
-                  <span
-                    className={`status ${
-                      data.shift.status === "changed" ? "warning" : "success"
-                    }`}
-                  >
-                    {data.shift.status === "published"
-                      ? "Bestätigter Plan"
-                      : "Plan wurde geändert"}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="dashboard-empty-state">
-                <span className="dashboard-empty-icon" aria-hidden="true">
-                  <CircleCheck />
-                </span>
-                <div>
-                  <h3>Kein kommender Dienst</h3>
-                  <p>
-                    Aktuell ist kein veröffentlichter Einsatz für Sie
-                    eingetragen.
-                  </p>
-                </div>
-              </div>
-            )}
-            <Link to="/app/schedule" className="dashboard-card-action">
-              Dienstplan öffnen <ArrowRight aria-hidden="true" />
+            <p>
+              Urlaub beantragen und den aktuellen Status direkt in der App
+              verfolgen. Es gilt eine 6-Tage-Woche von Montag bis Samstag.
+            </p>
+            <Link to="/app/leave" className="dashboard-card-action">
+              Urlaub öffnen <ArrowRight aria-hidden="true" />
             </Link>
+            {canApprove && (
+              <Link to="/app/admin/leave" className="dashboard-card-action">
+                Team-Anträge bearbeiten <ArrowRight aria-hidden="true" />
+              </Link>
+            )}
           </article>
 
           <aside className="dashboard-card dashboard-inbox-card">
@@ -373,7 +307,11 @@ export function Dashboard() {
               <span className="quick-action-icon" aria-hidden="true">
                 <Icon />
               </span>
-              <span>{label}</span>
+              <span>
+                {to === "/app/leave" && !has("leave.create")
+                  ? "Urlaub beantragen"
+                  : label}
+              </span>
               <ChevronRight aria-hidden="true" />
             </Link>
           ))}

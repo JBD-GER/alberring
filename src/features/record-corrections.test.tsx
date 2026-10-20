@@ -64,6 +64,13 @@ function mount(node: React.ReactNode, path = "/") {
   );
 }
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+
   state.permissions = [
     "data.correct",
     "leave.manage",

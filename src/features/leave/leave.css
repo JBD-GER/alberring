@@ -130,3 +130,32 @@
     width: 100%;
   }
 }
+
+.leave-dialog {
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 24px));
+  max-width: calc(100% - 24px);
+  max-height: calc(
+    100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
+      32px
+  );
+  padding: 0;
+  margin: auto;
+  border: 0;
+  border-radius: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--text);
+  background: #fff;
+}
+.leave-dialog::backdrop {
+  background: rgb(16 33 37 / 55%);
+}
+.leave-dialog .wf-panel {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+.leave-dialog .wf-form-grid > * {
+  min-width: 0;
+}

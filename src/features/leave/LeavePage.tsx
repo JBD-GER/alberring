@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -115,14 +115,14 @@ function workdayPreview(startsOn: string, endsOn: string, dayFraction: string) {
 const leaveTypeLabel = (value: string, options: LeaveTypeOption[]) =>
   options.find((type) => type.code === value)?.name ?? value;
 
-export function LeavePage() {
+export function LeavePage({ initialTab = "mine" }: { initialTab?: LeaveTab }) {
   const { appSession, has } = useAuth();
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [requestSaved, setRequestSaved] = useState(false);
   const [correctionRequest, setCorrectionRequest] =
     useState<LeaveRequest | null>(null);
-  const [tab, setTab] = useState<LeaveTab>("mine");
+  const [tab, setTab] = useState<LeaveTab>(initialTab);
   const [decisionRequestId, setDecisionRequestId] = useState<string | null>(
     null,
   );
@@ -231,37 +231,52 @@ export function LeavePage() {
         </MutationNotice>
       ) : null}
       {formOpen && canCreate ? (
-        <LeaveRequestForm
-          key={canCreateForOthers ? "administration" : "own"}
-          leaveTypes={availableLeaveTypes}
+        <LeaveDialog
+          label="Urlaub beantragen"
           onClose={() => setFormOpen(false)}
-          onSaved={(profileId) => {
-            setFormOpen(false);
-            setRequestSaved(true);
-            setTab(profileId === appSession?.profile.id ? "mine" : "team");
-          }}
-        />
+        >
+          <LeaveRequestForm
+            key={canCreateForOthers ? "administration" : "own"}
+            leaveTypes={availableLeaveTypes}
+            onClose={() => setFormOpen(false)}
+            onSaved={(profileId) => {
+              setFormOpen(false);
+              setRequestSaved(true);
+              setTab(profileId === appSession?.profile.id ? "mine" : "team");
+            }}
+          />
+        </LeaveDialog>
       ) : null}
       {correctionRequest && has("data.correct") ? (
-        <LeaveRequestForm
-          key={correctionRequest.id}
-          request={correctionRequest}
-          leaveTypes={availableLeaveTypes}
+        <LeaveDialog
+          label="Urlaubsantrag korrigieren"
           onClose={() => setCorrectionRequest(null)}
-          onSaved={() => setCorrectionRequest(null)}
-        />
+        >
+          <LeaveRequestForm
+            key={correctionRequest.id}
+            request={correctionRequest}
+            leaveTypes={availableLeaveTypes}
+            onClose={() => setCorrectionRequest(null)}
+            onSaved={() => setCorrectionRequest(null)}
+          />
+        </LeaveDialog>
       ) : null}
       {decisionRequest && canApprove ? (
-        <LeaveDecisionPanel
-          request={decisionRequest}
+        <LeaveDialog
+          label="Urlaubsantrag bearbeiten"
           onClose={() => setDecisionRequestId(null)}
-          onSaved={(status) => {
-            setSavedApprovalId(
-              status === "approved" ? decisionRequest.id : null,
-            );
-            setDecisionRequestId(null);
-          }}
-        />
+        >
+          <LeaveDecisionPanel
+            request={decisionRequest}
+            onClose={() => setDecisionRequestId(null)}
+            onSaved={(status) => {
+              setSavedApprovalId(
+                status === "approved" ? decisionRequest.id : null,
+              );
+              setDecisionRequestId(null);
+            }}
+          />
+        </LeaveDialog>
       ) : null}
       {canApprove && savedApproval?.status === "review" ? (
         <MutationNotice kind="success">
@@ -858,5 +873,34 @@ function LeaveTimeline({ request }: { request: LeaveRequest }) {
 }
 
 export function LeaveAdminPage() {
-  return <LeavePage />;
+  return <LeavePage initialTab="team" />;
+}
+
+function LeaveDialog({
+  label,
+  children,
+  onClose,
+}: {
+  label: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => {
+      dialog?.close();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="leave-dialog"
+      aria-label={label}
+      onClose={onClose}
+    >
+      {children}
+    </dialog>
+  );
 }

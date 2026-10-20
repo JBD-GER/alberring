@@ -52,11 +52,11 @@ export default function Privacy() {
       <section aria-labelledby="zwecke">
         <h2 id="zwecke">2. Zwecke, Daten und Herkunft</h2>
         <p>
-          Die App unterstützt die betriebliche Kommunikation, Dienstplanung und
-          Personalorganisation. Wir erhalten Daten von Ihnen, von berechtigten
-          Kolleginnen und Kollegen sowie aus der betrieblichen Verwaltung.
-          Welche Funktionen und Angaben Ihnen angezeigt werden, richtet sich
-          nach Ihrer Rolle und Teamzuordnung.
+          Die App unterstützt die betriebliche Kommunikation, Urlaubsverwaltung
+          und Personalorganisation. Wir erhalten Daten von Ihnen, von
+          berechtigten Kolleginnen und Kollegen sowie aus der betrieblichen
+          Verwaltung. Welche Funktionen und Angaben Ihnen angezeigt werden,
+          richtet sich nach Ihrer Rolle und Teamzuordnung.
         </p>
         <ul>
           <li>
@@ -65,7 +65,7 @@ export default function Privacy() {
             Beschäftigungsangaben und gegebenenfalls Geburtsdatum.
           </li>
           <li>
-            <strong>Arbeitsorganisation:</strong> Dienstpläne, Urlaubs- und
+            <strong>Arbeitsorganisation:</strong> Urlaubs- und
             Abwesenheitsdaten, Anträge, Freigaben, Dokumente, Lesebestätigungen,
             Fuhrparkmeldungen, Kilometerstände und Materialanforderungen.
           </li>

@@ -47,7 +47,7 @@ function AuthFrame({
             Einfach organisiert.
           </h2>
           <p>
-            Dienstplan, Kommunikation und alle wichtigen Abläufe sicher an einem
+            Urlaub, Kommunikation und alle wichtigen Abläufe sicher an einem
             Ort.
           </p>
         </div>
@@ -58,7 +58,7 @@ function AuthFrame({
         >
           <span role="listitem">
             <CalendarCheck2 />
-            Dienstplan jederzeit griffbereit
+            Urlaub direkt in der App beantragen
           </span>
           <span role="listitem">
             <HeartHandshake />

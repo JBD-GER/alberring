@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LeavePage } from "./leave/LeavePage";
+import { LeavePage, LeaveAdminPage } from "./leave/LeavePage";
 import { SickLeavePage } from "./sick-leave/SickLeavePage";
 
 const state = vi.hoisted(() => ({
@@ -85,6 +85,13 @@ function leaveRequest(profileId = state.employee, status = "submitted") {
 }
 
 beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+
   state.permissions = [];
   state.rpc.mockReset().mockImplementation(async (name: string) => ({
     data: name.startsWith("list_")
@@ -502,5 +509,36 @@ describe("Abwesenheiten durch die Administration erfassen", () => {
     expect(
       screen.getByRole("button", { name: "Attest hochladen" }),
     ).toBeTruthy();
+  });
+});
+
+describe("Mobile Urlaubsbearbeitung", () => {
+  it("öffnet Team-Anträge aus der Verwaltung sofort und zeigt die Bearbeitung im Dialog", async () => {
+    state.permissions = ["leave.manage"];
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "list_leave_requests" ? [leaveRequest()] : null,
+      error: null,
+    }));
+    mount(<LeaveAdminPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Antrag bearbeiten" }),
+    );
+    expect(
+      screen
+        .getByRole("dialog", { name: "Urlaubsantrag bearbeiten" })
+        .hasAttribute("open"),
+    ).toBe(true);
+    fireEvent(screen.getByRole("dialog"), new Event("close"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("zeigt Mitarbeitenden auch auf der Verwaltungsroute keine fremden Anträge", async () => {
+    state.permissions = ["leave.view_own", "leave.create_own"];
+    state.rpc.mockResolvedValue({ data: [leaveRequest()], error: null });
+    mount(<LeaveAdminPage />);
+    await screen.findByRole("button", { name: "Urlaub beantragen" });
+    expect(screen.queryByRole("tab", { name: /Team & Freigabe/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Antrag bearbeiten" }),
+    ).toBeNull();
   });
 });

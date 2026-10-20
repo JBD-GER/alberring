@@ -16,6 +16,7 @@ import { Link, Navigate, useLocation, useParams } from "react-router";
 import { functionErrorMessage } from "../../lib/function-errors";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
+import { DeletedMemberships } from "./DeletedMemberships";
 type UserRow = {
   id: string;
   display_name: string;
@@ -54,7 +55,7 @@ const roleDescriptions: Record<string, string> = {
   super_admin: "Voller Zugriff auf alle Funktionen und die Benutzerverwaltung.",
   team_lead: "Teamleitung mit den zugewiesenen Rechten für das eigene Team.",
   employee:
-    "Kommunikation und freigegebene Informationen. Urlaub und Krankmeldungen erfasst die Administration.",
+    "Kommunikation und freigegebene Informationen. Eigene Urlaubsanträge können direkt in der App gestellt werden.",
 };
 const supportedRoleKeys = new Set(["super_admin", "employee", "team_lead"]);
 const isSupportedRole = (role: RoleOption) =>
@@ -300,6 +301,7 @@ export function AdminUsers() {
       resend.reset();
       await Promise.all([
         client.invalidateQueries({ queryKey: ["admin-users"] }),
+        client.invalidateQueries({ queryKey: ["deleted-memberships"] }),
         client.invalidateQueries({ queryKey: ["directory"] }),
         client.invalidateQueries({ queryKey: ["admin-team-people"] }),
         client.invalidateQueries({ queryKey: ["conversation-people"] }),
@@ -526,6 +528,7 @@ export function AdminUsers() {
           ))}
         </div>
       )}
+      <DeletedMemberships />
     </div>
   );
 }
@@ -1629,6 +1632,7 @@ export function AdminRoles() {
                   {permissions
                     .filter(
                       (permission) =>
+                        !permission.key.startsWith("schedule.") &&
                         permission.key !== "sick_leave.create_own" &&
                         permission.key !== "data.correct",
                     )
@@ -2118,7 +2122,6 @@ export function AdminHome() {
     "roles.view",
     "roles.manage",
     "teams.manage",
-    "schedule.manage",
     "leave.approve",
     "leave.manage",
     "sick_leave.manage",
@@ -2132,12 +2135,6 @@ export function AdminHome() {
   ].some(has);
   if (!authorized) return <Navigate to="/app/dashboard" replace />;
   const operational = [
-    {
-      to: "/app/admin/schedule",
-      label: "Einsatzplanung",
-      description: "Schichten erstellen und veröffentlichen",
-      show: has("schedule.manage"),
-    },
     {
       to: "/app/admin/leave",
       label: "Urlaubsfreigaben",

@@ -1,6 +1,15 @@
 name: iOS review preflight
 on:
   workflow_dispatch:
+    inputs:
+      capture_store_screenshots:
+        description: Capture native screenshots using the isolated review account
+        type: boolean
+        default: false
+      release_source_commit:
+        description: Exact signed release commit whose source tree must match
+        type: string
+        required: false
   push:
     branches: [codex/ios-review-preparation]
 permissions:
@@ -10,6 +19,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   ios:
+    if: inputs.capture_store_screenshots != true
     runs-on: macos-latest
     timeout-minutes: 30
     env:
@@ -42,3 +52,126 @@ jobs:
           path: ${{ runner.temp }}/AlberringDerivedData/Build/Products/Release-iphonesimulator/App.app
           if-no-files-found: error
           retention-days: 7
+  store-screenshots:
+    if: github.event_name == 'workflow_dispatch' && inputs.capture_store_screenshots == true
+    runs-on: macos-latest
+    timeout-minutes: 35
+    environment: store-release
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad]
+    env:
+      CI: true
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_PUSH_ENABLED: ${{ vars.VITE_PUSH_ENABLED }}
+      VITE_PUSH_ENVIRONMENT: production
+      SCREENSHOT_DEVICE: ${{ matrix.device }}
+      RELEASE_SOURCE_COMMIT: ${{ inputs.release_source_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false, fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - name: Verify exact release sources before accessing credentials
+        run: |
+          python3 - <<'PYCODE'
+          import os,re,subprocess
+          commit=os.environ['RELEASE_SOURCE_COMMIT']
+          assert re.fullmatch(r'[0-9a-f]{40}',commit), 'Exact release commit is required'
+          subprocess.run(['git','cat-file','-e',commit+'^{commit}'],check=True)
+          subprocess.run(['git','diff','--exit-code',commit,'--','src','ios','capacitor.config.ts','package.json','package-lock.json','mobile-version.json'],check=True)
+          PYCODE
+      - run: npm ci
+      - run: npm run build:native && npm run mobile:version && npx cap sync ios
+      - name: Prepare isolated review credentials without logging them
+        env:
+          REVIEW_ACCESS_JSON: ${{ secrets.APPLE_REVIEW_SCREENSHOT_ACCESS }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          value = json.loads(os.environ['REVIEW_ACCESS_JSON'])
+          assert value['email'] == 'apple-review@alberring.de'
+          assert value['password'] and '\n' not in value['password']
+          print('::add-mask::' + value['password'])
+          path = Path(os.environ['RUNNER_TEMP']) / 'screenshot-review-access.json'
+          path.write_text(json.dumps({'email': value['email'], 'password': value['password']}))
+          path.chmod(0o600)
+          with open(os.environ['GITHUB_ENV'], 'a') as target:
+            target.write(f'SCREENSHOT_CREDENTIALS_FILE={path}\n')
+          PY
+      - name: Add disposable native UI capture target
+        run: |
+          gem install xcodeproj -v 1.27.0 --user-install --no-document
+          ruby scripts/store-screenshots/configure.rb
+      - name: Create supported screenshot simulator
+        run: python3 scripts/store-screenshots/simulator.py
+      - name: Capture authenticated native app
+        run: |
+          xcrun simctl boot "$SCREENSHOT_SIMULATOR"
+          xcrun simctl bootstatus "$SCREENSHOT_SIMULATOR" -b
+          xcrun simctl status_bar "$SCREENSHOT_SIMULATOR" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          xcodebuild -project ios/App/App.xcodeproj -scheme StoreScreenshots \
+            -configuration Release -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SCREENSHOT_SIMULATOR" \
+            -derivedDataPath "$RUNNER_TEMP/ScreenshotDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/Screenshots.xcresult" \
+            -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM=4562LXMH4C test
+      - name: Collect pre-login failure evidence only
+        if: failure()
+        run: |
+          data_path="$(xcrun simctl get_app_container "$SCREENSHOT_SIMULATOR" de.alberring.connect.StoreScreenshots.xctrunner data)"
+          if [ -f "$data_path/Documents/LaunchDiagnostics/pre-login.png" ]; then
+            mkdir -p launch-diagnostics
+            cp "$data_path/Documents/LaunchDiagnostics/pre-login.png" launch-diagnostics/
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: alberring-launch-diagnostics-${{ matrix.device }}
+          path: launch-diagnostics/
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Collect only screenshots and provenance
+        if: always()
+        run: |
+          data_path="$(xcrun simctl get_app_container "$SCREENSHOT_SIMULATOR" de.alberring.connect.StoreScreenshots.xctrunner data)"
+          mkdir -p store-screenshots
+          cp "$data_path/Documents/StoreScreenshots/"*.png store-screenshots/
+          python3 - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          record = {
+            'source_commit': os.environ['GITHUB_SHA'],
+            'release_source_commit': os.environ['RELEASE_SOURCE_COMMIT'],
+            'version': json.loads(Path('mobile-version.json').read_text())['version'],
+            'build': json.loads(Path('mobile-version.json').read_text())['buildNumber'],
+            'device': os.environ['SCREENSHOT_DEVICE_NAME'],
+            'runtime': os.environ['SCREENSHOT_RUNTIME'],
+            'synthetic_review_organization_only': True,
+            'capture': 'XCUIScreen.main.screenshot() in native iOS Simulator',
+            'images': sorted(p.name for p in Path('store-screenshots').glob('*.png'))
+          }
+          assert 1 <= len(record['images']) <= 2
+          Path('store-screenshots/provenance.json').write_text(json.dumps(record, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alberring-store-screenshots-${{ matrix.device }}
+          path: store-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove ephemeral credentials and simulator state
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/screenshot-review-access.json" ios/App/StoreScreenshots/review-access.json
+          rm -rf "$RUNNER_TEMP/ScreenshotDerivedData" "$RUNNER_TEMP/Screenshots.xcresult"
+          if [ -n "${SCREENSHOT_SIMULATOR:-}" ]; then
+            xcrun simctl shutdown "$SCREENSHOT_SIMULATOR" || true
+            xcrun simctl delete "$SCREENSHOT_SIMULATOR" || true
+          fi

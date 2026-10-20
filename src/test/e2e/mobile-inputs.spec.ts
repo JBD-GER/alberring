@@ -4,7 +4,7 @@ test.use({ serviceWorkers: "block" });
 
 // Exercise the real screens and their CSS cascade with synthetic API data.
 // No production session, employee data or write requests are needed.
-async function mockEmployee(page: Page, ownLeave = false) {
+async function mockEmployee(page: Page, ownLeave = false, admin = false) {
   const user = {
     id: "00000000-0000-4000-8000-000000000001",
     email: "mobile-input-test@example.invalid",
@@ -34,7 +34,31 @@ async function mockEmployee(page: Page, ownLeave = false) {
       "messages.use",
       ownLeave ? "leave.create_own" : "leave.create",
       "leave.view_own",
+      ...(admin ? ["leave.manage"] : []),
     ].map((permission_key) => ({ permission_key })),
+    list_leave_requests: admin
+      ? [
+          {
+            id: "00000000-0000-4000-8000-000000000003",
+            profile_id: "00000000-0000-4000-8000-000000000004",
+            leave_type: "annual",
+            starts_on: "2030-01-07",
+            ends_on: "2030-01-12",
+            day_fraction: 1,
+            workdays: 6,
+            note: "Synthetischer Antrag",
+            status: "submitted",
+            decided_by: null,
+            decided_at: null,
+            decision_note: null,
+            created_at: "2030-01-01T10:00:00Z",
+            profiles: {
+              id: "00000000-0000-4000-8000-000000000004",
+              display_name: "Erika Beispiel",
+            },
+          },
+        ]
+      : [],
     get_my_onboarding_state: { required: false, eligible: false },
     get_my_product_tour_state: { required: false, eligible: false },
   };
@@ -188,4 +212,30 @@ test("Mitarbeitende beantragen Urlaub auch auf schmalen Touch-Bildschirmen", asy
       "Der Urlaubsantrag wurde eingereicht und wartet auf Freigabe.",
     ),
   ).toBeVisible();
+});
+
+test("Verwaltung bearbeitet Teamurlaub direkt im sichtbaren mobilen Dialog", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await mockEmployee(page, false, true);
+  await expect(page.locator('a[href="/app/leave"]:visible')).toBeVisible();
+  await expect(page.locator('a[href="/app/schedule"]:visible')).toHaveCount(0);
+  await page.goto("/app/admin/leave");
+  await page.getByRole("button", { name: "Antrag bearbeiten" }).click();
+  const dialog = page.getByRole("dialog", { name: "Urlaubsantrag bearbeiten" });
+  await expect(dialog).toBeVisible();
+  await expectReadableControls(page);
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  await dialog
+    .getByRole("button", { name: "Genehmigen", exact: true })
+    .scrollIntoViewIfNeeded();
+  const saved = page.waitForRequest((request) =>
+    request.url().includes("/rpc/decide_leave_request"),
+  );
+  await dialog.getByRole("button", { name: "Genehmigen", exact: true }).click();
+  expect((await saved).postDataJSON().p_status).toBe("approved");
+  await expect(dialog).toHaveCount(0);
 });

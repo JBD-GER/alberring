@@ -110,14 +110,6 @@ const SettingsPage = lazy(() =>
     default: m.Settings,
   })),
 );
-const SchedulePage = lazy(() =>
-  import("../features/scheduling").then((m) => ({ default: m.SchedulePage })),
-);
-const ScheduleAdminPage = lazy(() =>
-  import("../features/scheduling").then((m) => ({
-    default: m.ScheduleAdminPage,
-  })),
-);
 const LeavePage = lazy(() =>
   import("../features/leave").then((m) => ({ default: m.LeavePage })),
 );
@@ -212,14 +204,7 @@ export const router = createBrowserRouter([
               },
               {
                 path: "schedule",
-                element: permitted(
-                  [
-                    "schedule.view_own",
-                    "schedule.view_team",
-                    "schedule.manage",
-                  ],
-                  <SchedulePage />,
-                ),
+                element: <Navigate to="/app/leave" replace />,
               },
               {
                 path: "leave",
@@ -314,7 +299,7 @@ export const router = createBrowserRouter([
               },
               {
                 path: "admin/schedule",
-                element: permitted("schedule.manage", <ScheduleAdminPage />),
+                element: <Navigate to="/app/admin/leave" replace />,
               },
               {
                 path: "admin/leave",

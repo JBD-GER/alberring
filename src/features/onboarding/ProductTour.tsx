@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
-  CalendarDays,
+  Umbrella,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -61,13 +61,13 @@ const tourSteps = [
     target: '[data-tour-id="messages"]',
   },
   {
-    title: "Planung mit einem Blick",
-    eyebrow: "Einsatzplanung",
+    title: "Urlaub direkt erledigen",
+    eyebrow: "Urlaub",
     description:
-      "Schichten erstellen, Konflikte erkennen, veröffentlichen und bestätigen – für Verwaltung und Mitarbeitende in derselben Oberfläche.",
-    icon: CalendarDays,
-    route: "/app/schedule",
-    target: '[data-tour-id="planning"]',
+      "Urlaub beantragen, den Status verfolgen und als berechtigte Person Team-Anträge direkt in der App bearbeiten.",
+    icon: Umbrella,
+    route: "/app/leave",
+    target: '[data-tour-id="leave"]',
   },
   {
     title: "Wissen sicher verteilen",
@@ -91,7 +91,7 @@ const tourSteps = [
     title: "Bereit für den echten Alltag",
     eyebrow: "Alles verbunden",
     description:
-      "Von der ersten Einladung bis zur Einsatzplanung: Alberring ist jetzt als sichere, gemeinsam nutzbare Arbeitszentrale eingerichtet.",
+      "Von der ersten Einladung bis zum Urlaubsantrag: Alberring ist jetzt als sichere, gemeinsam nutzbare Arbeitszentrale eingerichtet.",
     icon: Rocket,
     route: "/app/dashboard",
     target: null,
@@ -409,13 +409,13 @@ export function ProductTour({ open, manual, onClose }: ProductTourProps) {
             </button>
             <button
               type="button"
-              onClick={() => void finish("/app/schedule")}
+              onClick={() => void finish("/app/leave")}
               disabled={busy}
             >
-              <CalendarDays />
+              <Umbrella />
               <span>
-                <strong>Ersten Dienst planen</strong>
-                Planung direkt öffnen
+                <strong>Urlaub öffnen</strong>
+                Anträge und Freigaben
               </span>
               <ArrowRight />
             </button>

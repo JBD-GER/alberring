@@ -280,7 +280,6 @@ type Preference = {
 const preferenceCategories = [
   ["messages", "Nachrichten"],
   ["news", "News"],
-  ["schedule", "Dienstplan"],
   ["leave", "Urlaub"],
   ["documents", "Dokumente"],
   ["fleet", "Fuhrpark"],
@@ -409,7 +408,6 @@ export function More() {
     "roles.view",
     "roles.manage",
     "teams.manage",
-    "schedule.manage",
     "leave.approve",
     "leave.manage",
     "sick_leave.manage",

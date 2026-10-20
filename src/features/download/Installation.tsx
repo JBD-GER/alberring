@@ -11,7 +11,7 @@ export default function Installation() {
       <h1>Wie möchten Sie Alberring nutzen?</h1>
       <p>
         Ein Konto für alle Geräte: Melden Sie sich überall mit derselben
-        E-Mail-Adresse und Ihrem festgelegten Passwort an. Dienstplan,
+        E-Mail-Adresse und Ihrem festgelegten Passwort an. Urlaubsanträge,
         Nachrichten und Dokumente gehören zu demselben Mitarbeiterkonto.
       </p>
       <div className="installation-options">

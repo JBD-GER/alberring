@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Activity, Database, PlugZap, Search, ShieldAlert } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Activity, Database, PlugZap, Search } from "lucide-react";
 import { useState } from "react";
 import { Navigate } from "react-router";
 import { format } from "date-fns";
@@ -97,110 +97,118 @@ export function AuditLog() {
     </div>
   );
 }
-type Connection = {
-  id: string;
-  provider: "manual" | "careville";
-  status: string;
-  updated_at: string;
+type CurasoftStatus = {
+  status: "not_configured" | "mapping_required";
+  synchronizationEnabled: false;
+  checks: {
+    organization: boolean;
+    environment: boolean;
+    apiKey: boolean;
+    accessKey: boolean;
+  };
 };
 export function Integrations() {
   const { has } = useAuth();
-  const [result, setResult] = useState("");
-  const {
-    data = [],
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ["integrations"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("integration_connections")
-        .select("id,provider,status,updated_at")
-        .order("provider");
+  const status = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke(
+        "curasoft-readiness",
+        { body: {} },
+      );
       if (error) throw error;
-      return data as Connection[];
+      return data as CurasoftStatus;
     },
-    enabled: has("integrations.manage"),
   });
   if (!has("integrations.manage"))
     return <Navigate to="/app/dashboard" replace />;
-  const test = async (provider: string) => {
-    if (provider === "manual") {
-      setResult(
-        "Der manuelle Provider ist aktiv und benötigt keine Verbindung.",
-      );
-      return;
-    }
-    const { data, error: invokeError } = await supabase.functions.invoke(
-      "careville-test-connection",
-      { body: {} },
-    );
-    setResult(
-      invokeError
-        ? "Careville ist noch nicht konfiguriert. Offizielle API-Unterlagen und Zugangsdaten fehlen."
-        : (data?.error?.message ?? "Verbindungstest abgeschlossen."),
-    );
-  };
   return (
     <div className="page-stack">
       <section className="page-intro">
         <div>
           <h2>Integrationen</h2>
           <p>
-            Externe Systeme werden ausschließlich über dokumentierte Adapter
-            angebunden.
+            Verbindungen zu Ihrer Pflegesoftware und deren Einrichtungsstand.
           </p>
         </div>
       </section>
-      {result && <div className="alert">{result}</div>}
-      {isLoading ? (
-        <div className="skeleton-list">
-          <span />
-          <span />
-        </div>
-      ) : error ? (
-        <div className="alert error">
-          Integrationen konnten nicht geladen werden.
-        </div>
-      ) : (
-        <div className="integration-grid">
-          {data.map((connection) => (
-            <article key={connection.id}>
-              <span className="integration-icon">
-                {connection.provider === "manual" ? <Database /> : <PlugZap />}
-              </span>
-              <div>
-                <h3>
-                  {connection.provider === "manual"
-                    ? "Manuelle Verwaltung"
-                    : "Careville"}
-                </h3>
-                <p>
-                  {connection.provider === "manual"
-                    ? "Aktiver Standardprovider ohne externen Datenaustausch."
-                    : "Vorbereitet; keine API-Endpunkte ohne offizielle Dokumentation."}
-                </p>
-                <span
-                  className={`status ${connection.status === "active" ? "success" : "neutral"}`}
-                >
-                  {connection.status === "active"
-                    ? "Aktiv"
-                    : "Nicht konfiguriert"}
-                </span>
-              </div>
-              <button
-                className="secondary"
-                onClick={() => void test(connection.provider)}
-              >
-                Verbindung testen
-              </button>
-            </article>
-          ))}
+      <div className="integration-grid">
+        <article>
+          <span className="integration-icon">
+            <Database />
+          </span>
+          <div>
+            <h3>Alberring</h3>
+            <p>
+              Webanwendung, iOS und Android verwenden gemeinsam dieselben
+              Mitarbeiterdaten und Vorgänge.
+            </p>
+            <span className="status success">Aktiv</span>
+          </div>
+        </article>
+        <article>
+          <span className="integration-icon">
+            <PlugZap />
+          </span>
+          <div>
+            <h3>CuraSoft / CuraGo</h3>
+            <p>
+              Die Anbindung ist vorbereitet. Es werden noch keine Daten mit
+              CuraSoft ausgetauscht.
+            </p>
+            <span className="status neutral">Einrichtung ausstehend</span>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            disabled={status.isPending}
+            onClick={() => status.mutate()}
+          >
+            {status.isPending ? "Wird geprüft …" : "Einrichtungsstand prüfen"}
+          </button>
+        </article>
+      </div>
+      {status.error && (
+        <div className="alert error" role="alert">
+          Der Einrichtungsstand konnte nicht abgefragt werden. Bitte erneut
+          versuchen.
         </div>
       )}
-      <div className="alert">
-        <ShieldAlert /> Eine MediFox-Anbindung ist bewusst nicht implementiert.
-      </div>
+      {status.data && (
+        <div className="alert" role="status">
+          {status.data.status === "mapping_required"
+            ? "Die Zugangsdaten sind hinterlegt. Als Nächstes müssen die Datenzuordnung und der Datenaustausch mit CuraSoft im Testsystem abgestimmt und geprüft werden."
+            : "Die Einrichtung ist noch nicht vollständig. Bitte lassen Sie die Freischaltung und die Zugangsdaten durch Ihre technische Betreuung hinterlegen."}
+        </div>
+      )}
+      <section className="settings-card">
+        <h3>Für die Anbindung benötigen wir</h3>
+        <ul>
+          <li>Eine freigeschaltete CuraGo-/REST-API für Ihren Betrieb.</li>
+          <li>
+            Die von CuraSoft bestätigte Kundenzuordnung und einen Testzugang.
+          </li>
+          <li>
+            Einen API-Schlüssel und einen Zugriffsschlüssel mit den vereinbarten
+            Berechtigungen.
+          </li>
+          <li>
+            Eine Abstimmung, welche Mitarbeiterdaten und Urlaubsinformationen in
+            welche Richtung übertragen werden sollen.
+          </li>
+        </ul>
+        <p>
+          Zugangsschlüssel werden durch die technische Betreuung geschützt auf
+          dem Server hinterlegt. Bitte nicht per E-Mail versenden oder in die
+          App eintragen.
+        </p>
+        <a
+          href="https://docs.curasoft.dev/cura-go.de"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Offizielle CuraSoft-API-Dokumentation
+        </a>
+      </section>
     </div>
   );
 }

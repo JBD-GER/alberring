@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 import {
   Bell,
-  CalendarDays,
   Car,
   FileText,
   FolderOpen,
@@ -26,7 +25,7 @@ import { supabase } from "../lib/supabase";
 const tourTargetByRoute: Record<string, string> = {
   "/app/dashboard": "dashboard",
   "/app/messages": "messages",
-  "/app/schedule": "planning",
+  "/app/leave": "leave",
   "/app/documents": "documents",
   "/app/admin": "admin",
 };
@@ -44,10 +43,17 @@ const primary = [
     permission: "messages.use",
   },
   {
-    to: "/app/schedule",
-    label: "Planung",
-    icon: CalendarDays,
-    permission: ["schedule.view_own", "schedule.view_team"],
+    to: "/app/leave",
+    label: "Urlaub",
+    icon: Umbrella,
+    permission: [
+      "leave.view_own",
+      "leave.create_own",
+      "leave.create",
+      "leave.view_team",
+      "leave.approve",
+      "leave.manage",
+    ],
   },
   {
     to: "/app/documents",
@@ -62,19 +68,6 @@ const primary = [
 ];
 const more = [
   { to: "/app/news", label: "News", icon: Newspaper, permission: "news.view" },
-  {
-    to: "/app/leave",
-    label: "Urlaub",
-    icon: Umbrella,
-    permission: [
-      "leave.view_own",
-      "leave.create_own",
-      "leave.create",
-      "leave.view_team",
-      "leave.approve",
-      "leave.manage",
-    ],
-  },
   {
     to: "/app/sick-leave",
     label: "Krankmeldung",
@@ -127,7 +120,6 @@ export function AppShell() {
     "roles.view",
     "roles.manage",
     "teams.manage",
-    "schedule.manage",
     "leave.approve",
     "leave.manage",
     "sick_leave.manage",

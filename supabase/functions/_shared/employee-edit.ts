@@ -1,4 +1,4 @@
-import { z } from "npm:zod@4.4.3";
+import { z } from "npm:zod@4.6.7";
 import { HttpError } from "./security.ts";
 
 const optionalText = (max: number) => z.string().trim().max(max).nullable();

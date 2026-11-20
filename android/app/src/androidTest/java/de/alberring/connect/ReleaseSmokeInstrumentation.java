@@ -10,6 +10,13 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
+import android.Manifest;
+import com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.concurrent.CompletableFuture;
@@ -29,9 +36,10 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
         runTest(1, "loginAndNativeBridge", this::loginAndNativeBridge);
         runTest(2, "cameraEditor", this::cameraEditor);
         runTest(3, "inputViewportAndZoomRecovery", this::inputViewportAndZoomRecovery);
+        runTest(4, "pushPermissionMetadata", this::pushPermissionMetadata);
         Bundle result = new Bundle();
         result.putString(REPORT_KEY_STREAMRESULT, failures == 0
-            ? "\nOK (3 tests)\n" : "\nFAILURES!!! Tests run: 3, Failures: " + failures + "\n");
+            ? "\nOK (4 tests)\n" : "\nFAILURES!!! Tests run: 4, Failures: " + failures + "\n");
         finish(Activity.RESULT_OK, result);
     }
 
@@ -42,7 +50,7 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
         status.putString("id", "InstrumentationTestRunner");
         status.putString("class", getClass().getName());
         status.putString("test", name);
-        status.putInt("numtests", 3);
+        status.putInt("numtests", 4);
         status.putInt("current", current);
         sendStatus(1, status);
         try {
@@ -59,6 +67,27 @@ public final class ReleaseSmokeInstrumentation extends Instrumentation {
 
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
+    }
+
+    /** Inspect the actual shrunk plugin without requesting an OS permission. */
+    private void pushPermissionMetadata() throws Exception {
+        CapacitorPlugin plugin = PushNotificationsPlugin.class.getAnnotation(CapacitorPlugin.class);
+        require(plugin != null, "R8 must retain the runtime plugin annotation");
+        require("PushNotifications".equals(plugin.name()), "Push plugin name must survive shrinking");
+        boolean receiveFound = false;
+        for (Permission permission : plugin.permissions()) {
+            if ("receive".equals(permission.alias())) {
+                require(permission.strings().length == 1
+                    && Manifest.permission.POST_NOTIFICATIONS.equals(permission.strings()[0]),
+                    "The receive alias must request POST_NOTIFICATIONS");
+                receiveFound = true;
+            }
+        }
+        require(receiveFound, "Notification permission alias must survive shrinking");
+        require(PushNotificationsPlugin.class.getDeclaredMethod("permissionsCallback", PluginCall.class)
+            .getAnnotation(PermissionCallback.class) != null, "Permission callback annotation missing");
+        require(PushNotificationsPlugin.class.getDeclaredMethod("requestPermissions", PluginCall.class)
+            .getAnnotation(PluginMethod.class) != null, "Permission method annotation missing");
     }
 
     private Activity launch(String className) {

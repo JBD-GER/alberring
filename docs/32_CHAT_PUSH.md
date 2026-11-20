@@ -19,3 +19,5 @@ Chatversand stößt die vorhandene, mit einem separaten Geheimnis geschützte Au
 ## Automatische Prüfung
 
 `supabase/tests/chat_push_badges.test.sql` prüft Sichtbarkeit, Lesestatus, archivierte/stummgeschaltete Chats und Kontogrenzen. Die Clienttests prüfen Registrierung, Abmeldung, langsame Antworten und das Wiederherstellen einer Sitzung. Die Provider-Tests prüfen signierte Requests, Zähler und die datensparsamen Payloads ohne echte Mitarbeiterdaten.
+
+Der Release aktualisiert außerdem die vom Sicherheitscheck beanstandeten Abhängigkeiten. Bis Workbox seine eigene Glob-Abhängigkeit aktualisiert, ist ausschließlich für `workbox-build` Glob 14.0.6 festgelegt. Der produktive Web-Build einschließlich Service Worker und die Browsertests prüfen diese Kombination; `npm audit --audit-level=moderate` bleibt verpflichtend.

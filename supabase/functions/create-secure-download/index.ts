@@ -1,5 +1,5 @@
 import { publicDownloadUrl } from "../_shared/download-url.ts";
-import { z } from "npm:zod@4.4.3";
+import { z } from "npm:zod@4.6.7";
 import { corsHeaders, json } from "../_shared/http.ts";
 import {
   handlerError,

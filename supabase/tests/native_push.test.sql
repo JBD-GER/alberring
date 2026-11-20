@@ -68,8 +68,8 @@ insert into public.notifications(organization_id,profile_id,type,title,body)
 select '00000000-0000-4000-8000-000000000001','71000000-0000-4000-8000-000000000001','system','Queue test','Queue test'
 from generate_series(1,12);
 set local role service_role;
-select is((select count(*) from public.claim_notification_batch(100)),10::bigint,'claim clamps scheduler request to bounded batch');
-select is((select count(*) from public.claim_notification_batch(100)),2::bigint,'second claim skips leased rows');
+select is((select count(*) from public.claim_notification_batch(100)),12::bigint,'claim drains small notification batches');
+select is((select count(*) from public.claim_notification_batch(100)),0::bigint,'second claim skips leased rows');
 select is((select count(*) from public.claim_notification_batch(100)),0::bigint,'leased notifications are not claimed again');
 reset role;
 select is((select min(attempt_count) from public.notification_deliveries d join public.notifications n on n.id=d.notification_id where n.title='Queue test'),1::smallint,'each claimed delivery increments attempt once');

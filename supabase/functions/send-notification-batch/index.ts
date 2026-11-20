@@ -1,4 +1,4 @@
-import { z } from "npm:zod@4.4.3";
+import { z } from "npm:zod@4.6.7";
 import { corsHeaders, json } from "../_shared/http.ts";
 import {
   handlerError,
@@ -19,8 +19,8 @@ const input = z.object({
     .int()
     .min(1)
     .max(500)
-    .default(10)
-    .transform((value) => Math.min(value, 10)),
+    .default(50)
+    .transform((value) => Math.min(value, 50)),
 });
 const sendPush = createPushSender();
 
@@ -101,6 +101,13 @@ Deno.serve(async (req) => {
         .eq("id", delivery.notification_id)
         .single();
       if (notificationError) throw notificationError;
+      const { data: state, error: stateError } = await admin.rpc(
+        "push_delivery_state",
+        { p_notification_id: delivery.notification_id },
+      );
+      if (stateError) throw stateError;
+      if (!state?.eligible)
+        return await finish("skipped", "already_read_or_unavailable");
       const { data: preference, error: preferenceError } = await admin
         .from("notification_preferences")
         .select("push_enabled,quiet_hours_start,quiet_hours_end,timezone")
@@ -142,13 +149,14 @@ Deno.serve(async (req) => {
         retry = false,
         failed = false;
       // Cap fanout concurrency while preserving successful per-device receipts.
-      for (let offset = 0; offset < targets.length; offset += 3) {
+      for (let offset = 0; offset < targets.length; offset += 5) {
         await Promise.all(
-          targets.slice(offset, offset + 3).map(async (device) => {
+          targets.slice(offset, offset + 5).map(async (device) => {
             const result = await sendPush(
               device,
               delivery.notification_id,
               delivery.target_path,
+              state.badge_count,
             );
             if (result.status === "sent") {
               const { error: savedError } = await admin
@@ -197,8 +205,8 @@ Deno.serve(async (req) => {
       );
     };
     const deliveries = (data ?? []) as Delivery[];
-    for (let offset = 0; offset < deliveries.length; offset += 5) {
-      await Promise.all(deliveries.slice(offset, offset + 5).map(process));
+    for (let offset = 0; offset < deliveries.length; offset += 10) {
+      await Promise.all(deliveries.slice(offset, offset + 10).map(process));
     }
     return json(counts, 200, requestId, corsHeaders(origin));
   } catch (error) {

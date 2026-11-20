@@ -21,6 +21,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../features/auth/AuthProvider";
 import { ProductTour } from "../features/onboarding/ProductTour";
 import { supabase } from "../lib/supabase";
+import { syncPushBadge } from "../services/platform/push";
+import { PushPrompt } from "../components/common/PushPrompt";
 
 const tourTargetByRoute: Record<string, string> = {
   "/app/dashboard": "dashboard",
@@ -213,6 +215,9 @@ export function AppShell() {
       void supabase.removeChannel(channel);
     };
   }, [appSession, canUseMessages, refetchMessagesUnread, refetchUnread]);
+  useEffect(() => {
+    void syncPushBadge().catch(() => {});
+  }, [unread, messagesUnread, appSession?.profile.id]);
   const badge = (count: number, label: string) =>
     count > 0 ? (
       <span className="nav-badge" aria-label={`${count} ungelesene ${label}`}>
@@ -297,6 +302,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="content">
+          <PushPrompt />
           <Outlet />
         </main>
         <nav className="bottom-nav" aria-label="Mobile Hauptnavigation">

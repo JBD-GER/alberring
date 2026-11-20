@@ -12,6 +12,7 @@ export type DevicePermissionStatus = {
 };
 
 interface SettingsPlugin {
+  setBadgeCount(options: { count: number }): Promise<void>;
   openSettings(): Promise<void>;
   permissionStatus(options: {
     permission: DevicePermission;
@@ -22,6 +23,13 @@ interface SettingsPlugin {
 }
 
 const settings = registerPlugin<SettingsPlugin>("AlberringSettings");
+
+export async function setAppBadgeCount(count: number): Promise<void> {
+  if (Capacitor.isNativePlatform())
+    await settings.setBadgeCount({
+      count: Math.max(0, Math.min(9999, Math.floor(count))),
+    });
+}
 
 export const permissionLabels: Record<PermissionState, string> = {
   notDetermined: "Noch nicht angefragt",

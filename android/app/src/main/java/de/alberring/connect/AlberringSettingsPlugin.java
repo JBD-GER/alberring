@@ -1,6 +1,9 @@
 package de.alberring.connect;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.service.notification.StatusBarNotification;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -22,6 +25,26 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "AlberringSettings")
 public final class AlberringSettingsPlugin extends Plugin {
+    @PluginMethod
+    public void setBadgeCount(PluginCall call) {
+        int count = Math.max(0, Math.min(9999, call.getInt("count", 0)));
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        try {
+            // Android badges follow active notifications. Respect the launcher
+            // and OS settings; do not manufacture a notification just for a badge.
+            for (StatusBarNotification active : manager.getActiveNotifications()) {
+                if (Build.VERSION.SDK_INT >= 26 && !"alberring-updates".equals(active.getNotification().getChannelId())) continue;
+                if (count == 0) manager.cancel(active.getTag(), active.getId());
+                else if (NotificationManagerCompat.from(getContext()).areNotificationsEnabled()) {
+                    Notification updated = Notification.Builder.recoverBuilder(getContext(), active.getNotification())
+                        .setNumber(1).setOnlyAlertOnce(true).build();
+                    manager.notify(active.getTag(), active.getId(), updated);
+                }
+            }
+            call.resolve();
+        } catch (Exception ignored) { call.reject("Badge could not be updated.", "BADGE_UNAVAILABLE"); }
+    }
+
     private SharedPreferences history() {
         return getContext().getSharedPreferences("alberring_permission_history", Context.MODE_PRIVATE);
     }

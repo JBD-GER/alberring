@@ -154,6 +154,7 @@ Deno.test(
       );
       const body = JSON.parse(String(init?.body));
       equal(body.target_path, "/app/notifications");
+      equal(body.aps.badge, 7);
       equal(
         body.aps.alert.body,
         "Eine neue Mitteilung ist verfügbar. Öffnen Sie die App.",
@@ -181,6 +182,7 @@ Deno.test(
           },
           "notification-id",
           "https://unsafe.test",
+          7,
         ),
         { status: "sent", messageId: "receipt-id" },
       );
@@ -226,6 +228,7 @@ Deno.test(
       const body = JSON.parse(String(init?.body));
       equal(body.message.android.notification.channel_id, "alberring-updates");
       equal(body.message.data.target_path, "/app/messages");
+      equal(body.message.android.notification.notification_count, 1);
       return Response.json({ name: "fcm-receipt" });
     };
     try {
@@ -242,11 +245,11 @@ Deno.test(
         push_token: "c".repeat(64),
         push_environment: "production" as const,
       };
-      equal(await sender(device, "notification-id", "/app/messages"), {
+      equal(await sender(device, "notification-id", "/app/messages", 6), {
         status: "sent",
         messageId: "fcm-receipt",
       });
-      await sender(device, "second-notification", "/app/messages");
+      await sender(device, "second-notification", "/app/messages", 6);
       equal(requests, 3); // Second send reuses the short-lived OAuth access token.
     } finally {
       globalThis.fetch = original;

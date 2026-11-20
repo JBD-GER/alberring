@@ -16,10 +16,11 @@ import { parseNativeLink } from "../../services/platform/links";
 import {
   initializePush,
   restorePushForUser,
+  syncPushBadge,
 } from "../../services/platform/push";
 
 export function PlatformRuntime() {
-  const { session, sessionError } = useAuth();
+  const { session, sessionError, loading } = useAuth();
   const client = useQueryClient();
   const [notice, setNotice] = useState("");
   const [pushReady, setPushReady] = useState(false);
@@ -80,6 +81,7 @@ export function PlatformRuntime() {
             supabase.auth.startAutoRefresh();
             window.dispatchEvent(new Event("focus"));
             void client.invalidateQueries();
+            void syncPushBadge().catch(() => {});
           } else supabase.auth.stopAutoRefresh();
         }),
       );
@@ -123,7 +125,8 @@ export function PlatformRuntime() {
       if (launch?.url) await handleUrl(launch.url);
       try {
         removePush = await initializePush(navigate, () => {
-          void client.invalidateQueries({ queryKey: ["notifications"] });
+          void client.invalidateQueries();
+          void syncPushBadge().catch(() => {});
         });
         if (disposed) removePush();
         else setPushReady(true);
@@ -148,13 +151,13 @@ export function PlatformRuntime() {
     };
   }, [client]);
   useEffect(() => {
-    if (!pushReady) return;
+    if (!pushReady || loading) return;
     void restorePushForUser(session?.user.id ?? null).catch(() =>
       setNotice(
         "Push konnte nicht erneuert werden. Aktivieren Sie es bei bestehender Verbindung erneut in den Einstellungen.",
       ),
     );
-  }, [session?.user.id, pushReady]);
+  }, [session?.user.id, pushReady, loading]);
   const text = sessionError || notice;
   if (!text) return null;
   return (

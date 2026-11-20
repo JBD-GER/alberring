@@ -11,6 +11,9 @@ const state = vi.hoisted(() => ({
   request: vi.fn(),
   check: vi.fn(),
   getSession: vi.fn(),
+  badge: vi.fn(),
+  delivered: vi.fn(),
+  removeDelivered: vi.fn(),
 }));
 vi.mock("@capacitor/core", () => ({
   Capacitor: { isNativePlatform: () => state.native, getPlatform: () => "ios" },
@@ -24,6 +27,8 @@ vi.mock("@capacitor/push-notifications", () => ({
         return { remove: vi.fn() };
       },
     ),
+    getDeliveredNotifications: state.delivered,
+    removeDeliveredNotifications: state.removeDelivered,
     register: state.register,
     unregister: state.unregister,
     requestPermissions: state.request,
@@ -48,6 +53,7 @@ vi.mock("./storage", () => ({
 }));
 vi.mock("./permissions", () => ({
   markPermissionRequested: vi.fn(async () => {}),
+  setAppBadgeCount: state.badge,
 }));
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -67,7 +73,13 @@ beforeEach(() => {
   state.getSession.mockResolvedValue({
     data: { session: { user: { id: "user-a" } } },
   });
-  state.rpc.mockResolvedValue({ error: null });
+  state.rpc.mockResolvedValue({
+    error: null,
+    data: { badge_count: 0, stale_ids: [] },
+  });
+  state.badge.mockResolvedValue(undefined);
+  state.delivered.mockResolvedValue({ notifications: [] });
+  state.removeDelivered.mockResolvedValue(undefined);
   state.request.mockResolvedValue({ receive: "granted" });
   state.check.mockResolvedValue({ receive: "granted" });
   state.unregister.mockResolvedValue(undefined);
@@ -164,7 +176,13 @@ it("reports failed server revocation and keeps installation identity for retry",
   const push = await import("./push");
   await expect(push.disablePush()).rejects.toThrow("nicht vollständig");
   expect(state.values.get("alberring.installation")).toBe("installation-id");
-  state.rpc.mockResolvedValue({ error: null });
+  state.rpc.mockResolvedValue({
+    error: null,
+    data: { badge_count: 0, stale_ids: [] },
+  });
+  state.badge.mockResolvedValue(undefined);
+  state.delivered.mockResolvedValue({ notifications: [] });
+  state.removeDelivered.mockResolvedValue(undefined);
   await push.disablePush();
   expect(state.rpc).toHaveBeenCalledTimes(2);
 });
@@ -180,4 +198,62 @@ it("untrusted notification taps cannot navigate outside approved app screens", a
     notification: { data: { target_path: "/app/messages" } },
   });
   expect(navigate).toHaveBeenLastCalledWith("/app/messages");
+});
+
+it("syncs actual unread badges and removes only server-confirmed read notifications", async () => {
+  const push = await import("./push");
+  await push.initializePush(vi.fn(), vi.fn());
+  await push.enablePush();
+  const read = "10000000-0000-4000-8000-000000000001";
+  const unread = "10000000-0000-4000-8000-000000000002";
+  state.delivered.mockResolvedValue({
+    notifications: [
+      { id: "native-read", tag: read },
+      { id: "native-unread", data: { notificationId: unread } },
+    ],
+  });
+  state.rpc.mockResolvedValue({
+    error: null,
+    data: { badge_count: 4, stale_ids: [read] },
+  });
+  await push.syncPushBadge();
+  expect(state.rpc).toHaveBeenLastCalledWith("my_push_state", {
+    p_delivered_ids: [read, unread],
+  });
+  expect(state.removeDelivered).toHaveBeenLastCalledWith({
+    notifications: [{ id: "native-read", tag: read }],
+  });
+  expect(state.badge).toHaveBeenLastCalledWith(4);
+});
+it("does not restore a stale badge after logout during a slow count request", async () => {
+  const push = await import("./push");
+  await push.initializePush(vi.fn(), vi.fn());
+  await push.enablePush();
+  const pending = deferred<{
+    error: null;
+    data: { badge_count: number; stale_ids: string[] };
+  }>();
+  state.rpc.mockImplementation((name: string) =>
+    name === "my_push_state"
+      ? pending.promise
+      : Promise.resolve({ error: null }),
+  );
+  const syncing = push.syncPushBadge();
+  await vi.waitFor(() =>
+    expect(state.rpc).toHaveBeenLastCalledWith("my_push_state", {
+      p_delivered_ids: [],
+    }),
+  );
+  const logout = push.disablePush();
+  pending.resolve({ error: null, data: { badge_count: 9, stale_ids: [] } });
+  await Promise.all([syncing, logout]);
+  expect(state.badge).not.toHaveBeenCalledWith(9);
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});
+
+it("preserves delivered notifications while auth restoration is pending", async () => {
+  const push = await import("./push");
+  await push.syncPushBadge();
+  expect(state.badge).not.toHaveBeenCalled();
+  expect(state.delivered).not.toHaveBeenCalled();
 });

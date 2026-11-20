@@ -159,8 +159,17 @@ export default function Privacy() {
           entfernt nicht automatisch die betrieblichen Daten auf dem Server.
         </p>
         <p>
-          Native Push-Mitteilungen sind in der aktuellen iOS-Version
-          deaktiviert.
+          Push-Mitteilungen können Sie in der iOS- und Android-App freiwillig
+          aktivieren und jederzeit in der App oder den Geräteeinstellungen
+          deaktivieren. Für die Zustellung verwenden wir den Apple Push
+          Notification Service (APNs) beziehungsweise Firebase Cloud Messaging
+          (Google). Dabei werden eine technische Gerätekennung (Push-Token),
+          Zustellungsdaten und ein allgemeiner Hinweis mit Verweis auf die App
+          verarbeitet. Namen, Chattexte und Dokumentinhalte werden nicht in der
+          Push-Mitteilung übermittelt. Die Gerätezuordnung wird in Supabase mit
+          Ihrem Mitarbeiterkonto und der Anmeldung verknüpft; beim Abmelden wird
+          sie widerrufen. Ungelesene Hinweise können als Kennzeichen am
+          App-Symbol erscheinen. Eine Nutzung der App ohne Push ist möglich.
         </p>
       </section>
 

@@ -224,9 +224,9 @@ export function Settings() {
         </form>
       </section>
       <div className="alert">
-        E-Mail- und Push-Präferenzen werden gespeichert. Die tatsächliche
-        Zustellung startet erst, sobald ein Betreiber-Provider konfiguriert
-        wurde.
+        Für Chat-Hinweise bei geschlossener App aktivieren Sie unten „Chat-Push“
+        und erlauben Mitteilungen auf Ihrem Handy. E-Mail-Hinweise benötigen
+        weiterhin die Einrichtung des E-Mail-Versands.
       </div>
       <NotificationPreferences />
       <SafetySettings />

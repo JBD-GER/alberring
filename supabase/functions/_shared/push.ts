@@ -154,8 +154,12 @@ export function createPushSender(
     device: PushDevice,
     notificationId: string,
     targetPath: string | null,
+    unreadCount = 1,
   ): Promise<PushResult> => {
     const payload = genericPush(notificationId, targetPath);
+    const badge = Number.isFinite(unreadCount)
+      ? Math.max(0, Math.min(9999, Math.floor(unreadCount)))
+      : 0;
     const now = Math.floor(Date.now() / 1000);
     try {
       if (device.platform === "ios") {
@@ -199,7 +203,7 @@ export function createPushSender(
               aps: {
                 alert: { title: payload.title, body: payload.body },
                 sound: "default",
-                badge: 1,
+                badge,
               },
               notificationId,
               target_path: payload.target_path,
@@ -285,6 +289,9 @@ export function createPushSender(
                   channel_id: "alberring-updates",
                   sound: "default",
                   tag: notificationId,
+                  // Each Android notification represents one item; launchers
+                  // may sum these counts across the active notification tray.
+                  notification_count: 1,
                 },
               },
             },

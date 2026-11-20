@@ -11,8 +11,24 @@ public final class AlberringSettingsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "permissionStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBadgeCount", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "markPermissionRequested", returnType: CAPPluginReturnPromise)
     ]
+
+    @objc func setBadgeCount(_ call: CAPPluginCall) {
+        let count = max(0, min(9999, call.getInt("count") ?? 0))
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                UNUserNotificationCenter.current().setBadgeCount(count) { error in
+                    if error != nil { call.reject("Badge could not be updated.", "BADGE_UNAVAILABLE") }
+                    else { call.resolve() }
+                }
+            } else {
+                UIApplication.shared.applicationIconBadgeNumber = count
+                call.resolve()
+            }
+        }
+    }
 
     @objc func openSettings(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
